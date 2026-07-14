@@ -44,6 +44,8 @@ qt_add_executable(ObdSuite
     src/LiveChartWidget.cpp
     src/FrameTableModel.h
     src/FrameTableModel.cpp
+    src/FrameSummaryModel.h
+    src/FrameSummaryModel.cpp
     src/CanFrame.h
 )
 

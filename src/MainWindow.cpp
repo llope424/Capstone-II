@@ -30,7 +30,13 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
+#include <QClipboard>
+#include <QGuiApplication>
+#include <QKeySequence>
+#include <QShortcut>
+
 #include "Elm327Connection.h"
+#include "FrameSummaryModel.h"
 #include "FrameTableModel.h"
 #include "GaugeWidget.h"
 #include "LiveChartWidget.h"
@@ -196,15 +202,31 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     connect(m_testRequestButton, &QPushButton::clicked, this, &MainWindow::onSendTestRequestClicked);
     testBar->addWidget(m_testRequestButton);
     testBar->addStretch();
+
+    testBar->addWidget(new QLabel("Filter ID:"));
+    m_filterEdit = new QLineEdit();
+    m_filterEdit->setPlaceholderText("e.g. 7E8");
+    m_filterEdit->setClearButtonEnabled(true);
+    m_filterEdit->setMaximumWidth(140);
+    m_filterEdit->setToolTip("Show only frames whose ID contains this text (case-insensitive).");
+    connect(m_filterEdit, &QLineEdit::textChanged, this, &MainWindow::onFilterChanged);
+    testBar->addWidget(m_filterEdit);
+
+    m_overviewCheck = new QCheckBox("Overview (per ID)");
+    m_overviewCheck->setToolTip("Collapse to one row per unique ID, with a live count and last data.");
+    connect(m_overviewCheck, &QCheckBox::toggled, this, &MainWindow::onOverviewToggled);
+    testBar->addWidget(m_overviewCheck);
     rawLayout->addLayout(testBar);
 
-    // Model/view so columns are sortable (click a header to sort; click again to
-    // reverse). The proxy sorts by FrameTableModel::SortRole, which returns
-    // numeric keys, so IDs and timestamps order by value rather than by text.
+    // Streaming frame list: model/view so columns are sortable (click a header to
+    // sort; click again to reverse). The proxy sorts by FrameTableModel::SortRole
+    // (numeric keys), so IDs and timestamps order by value, not by text.
     m_frameModel = new FrameTableModel(this);
     m_frameProxy = new QSortFilterProxyModel(this);
     m_frameProxy->setSourceModel(m_frameModel);
     m_frameProxy->setSortRole(FrameTableModel::SortRole);
+    m_frameProxy->setFilterKeyColumn(FrameTableModel::Id);
+    m_frameProxy->setFilterCaseSensitivity(Qt::CaseInsensitive);
 
     m_frameView = new QTableView(rawPage);
     m_frameView->setModel(m_frameProxy);
@@ -216,6 +238,29 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     m_frameView->setSelectionBehavior(QAbstractItemView::SelectRows);
     rawLayout->addWidget(m_frameView, 1);
 
+    // Overview: one row per unique ID (hidden until the Overview box is ticked).
+    m_summaryModel = new FrameSummaryModel(this);
+    m_summaryProxy = new QSortFilterProxyModel(this);
+    m_summaryProxy->setSourceModel(m_summaryModel);
+    m_summaryProxy->setSortRole(FrameSummaryModel::SortRole);
+    m_summaryProxy->setFilterKeyColumn(FrameSummaryModel::Id);
+    m_summaryProxy->setFilterCaseSensitivity(Qt::CaseInsensitive);
+
+    m_summaryView = new QTableView(rawPage);
+    m_summaryView->setModel(m_summaryProxy);
+    m_summaryView->setSortingEnabled(true);
+    m_summaryView->sortByColumn(FrameSummaryModel::Id, Qt::AscendingOrder);
+    m_summaryView->horizontalHeader()->setSectionResizeMode(FrameSummaryModel::Data, QHeaderView::Stretch);
+    m_summaryView->verticalHeader()->setVisible(false);
+    m_summaryView->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_summaryView->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_summaryView->setVisible(false);
+    rawLayout->addWidget(m_summaryView, 1);
+
+    // Ctrl+C copies the current view's selection.
+    auto *copyShortcut = new QShortcut(QKeySequence::Copy, rawPage);
+    connect(copyShortcut, &QShortcut::activated, this, &MainWindow::onCopyFrames);
+
     auto *bottomBar = new QHBoxLayout();
     m_autoScrollCheck = new QCheckBox("Auto-scroll");
     m_autoScrollCheck->setChecked(true);
@@ -225,6 +270,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     m_pauseButton->setToolTip("Freeze the view so you can inspect and sort captured frames.");
     connect(m_pauseButton, &QPushButton::clicked, this, &MainWindow::onPauseClicked);
     bottomBar->addWidget(m_pauseButton);
+
+    m_copyButton = new QPushButton("Copy");
+    m_copyButton->setToolTip("Copy the selected rows to the clipboard (or press Ctrl+C).");
+    connect(m_copyButton, &QPushButton::clicked, this, &MainWindow::onCopyFrames);
+    bottomBar->addWidget(m_copyButton);
 
     m_clearButton = new QPushButton("Clear");
     connect(m_clearButton, &QPushButton::clicked, this, &MainWindow::onClearClicked);
@@ -891,10 +941,12 @@ void MainWindow::flushPendingFrames()
     m_pendingFrames.clear();
 
     m_frameModel->addFrames(batch);
+    m_summaryModel->addFrames(batch); // keeps the per-ID overview live
 
-    // Auto-scroll only makes sense in arrival order; skip it if the user has
-    // sorted by a column (the newest frame may not be at the bottom).
-    if (m_autoScrollCheck->isChecked() && m_frameView->horizontalHeader()->sortIndicatorSection() == FrameTableModel::Time
+    // Auto-scroll only makes sense in the streaming view in arrival order; skip
+    // it if the user is in overview mode or has sorted by another column.
+    if (m_autoScrollCheck->isChecked() && !m_overviewCheck->isChecked()
+        && m_frameView->horizontalHeader()->sortIndicatorSection() == FrameTableModel::Time
         && m_frameView->horizontalHeader()->sortIndicatorOrder() == Qt::AscendingOrder)
         m_frameView->scrollToBottom();
 
@@ -906,6 +958,7 @@ void MainWindow::onClearClicked()
 {
     m_pendingFrames.clear();
     m_frameModel->clear();
+    m_summaryModel->clear();
     m_frameCount = 0;
     m_frameCountLabel->setText("Frames: 0");
 }
@@ -915,6 +968,56 @@ void MainWindow::onPauseClicked()
     m_paused = !m_paused;
     m_pauseButton->setText(m_paused ? "Resume" : "Pause");
     onLogMessage(m_paused ? "Raw traffic view paused." : "Raw traffic view resumed.");
+}
+
+void MainWindow::onFilterChanged(const QString &text)
+{
+    // Apply the same ID filter to both the streaming and overview proxies so it
+    // works whichever view is showing.
+    m_frameProxy->setFilterFixedString(text);
+    m_summaryProxy->setFilterFixedString(text);
+}
+
+void MainWindow::onOverviewToggled(bool on)
+{
+    m_frameView->setVisible(!on);
+    m_summaryView->setVisible(on);
+    // Auto-scroll and Pause only apply to the streaming view.
+    m_autoScrollCheck->setEnabled(!on);
+    m_pauseButton->setEnabled(!on);
+}
+
+void MainWindow::onCopyFrames()
+{
+    QTableView *view = m_overviewCheck->isChecked() ? m_summaryView : m_frameView;
+    const QModelIndexList rows = view->selectionModel()->selectedRows();
+    if (rows.isEmpty()) {
+        onLogMessage("Nothing selected to copy.");
+        return;
+    }
+
+    auto *model = view->model();
+    const int cols = model->columnCount();
+
+    // Header line, then one tab-separated line per selected row (in view order).
+    QStringList lines;
+    QStringList header;
+    for (int c = 0; c < cols; ++c)
+        header << model->headerData(c, Qt::Horizontal).toString();
+    lines << header.join('\t');
+
+    QList<QModelIndex> sorted = rows;
+    std::sort(sorted.begin(), sorted.end(),
+              [](const QModelIndex &a, const QModelIndex &b) { return a.row() < b.row(); });
+    for (const QModelIndex &idx : sorted) {
+        QStringList cells;
+        for (int c = 0; c < cols; ++c)
+            cells << model->index(idx.row(), c).data(Qt::DisplayRole).toString();
+        lines << cells.join('\t');
+    }
+
+    QGuiApplication::clipboard()->setText(lines.join('\n'));
+    onLogMessage(QString("Copied %1 row(s) to the clipboard.").arg(rows.size()));
 }
 
 void MainWindow::onDeviceInfoReceived(int buildNumber, int singleWireMode)

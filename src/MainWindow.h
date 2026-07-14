@@ -14,6 +14,7 @@ class SessionLogger;
 class VehicleStore;
 class Elm327Connection;
 class FrameTableModel;
+class FrameSummaryModel;
 class GaugeWidget;
 class LiveChartWidget;
 
@@ -65,6 +66,9 @@ private slots:
     void onFrameReplayed(const CanFrame &frame);
     void onReplayFinished();
     void onPauseClicked();
+    void onFilterChanged(const QString &text);
+    void onOverviewToggled(bool on);
+    void onCopyFrames();
 
     // Report
     void onExportReport();
@@ -155,9 +159,15 @@ private:
     QPushButton *m_recordButton;
     QPushButton *m_replayButton;
     QPushButton *m_pauseButton;
+    QPushButton *m_copyButton;
+    QLineEdit *m_filterEdit;
+    QCheckBox *m_overviewCheck;
     QTableView *m_frameView;
     FrameTableModel *m_frameModel;
     QSortFilterProxyModel *m_frameProxy;
+    QTableView *m_summaryView;
+    FrameSummaryModel *m_summaryModel;
+    QSortFilterProxyModel *m_summaryProxy;
     QLabel *m_frameCountLabel;
     bool m_paused = false;
 
