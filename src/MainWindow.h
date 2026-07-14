@@ -13,6 +13,7 @@ class ObdVehicleInfo;
 class SessionLogger;
 class VehicleStore;
 class Elm327Connection;
+class FrameTableModel;
 class GaugeWidget;
 class LiveChartWidget;
 
@@ -21,6 +22,8 @@ class QPushButton;
 class QLabel;
 class QLineEdit;
 class QTableWidget;
+class QTableView;
+class QSortFilterProxyModel;
 class QCheckBox;
 class QPlainTextEdit;
 class QComboBox;
@@ -61,6 +64,7 @@ private slots:
     void onReplayButtonClicked();
     void onFrameReplayed(const CanFrame &frame);
     void onReplayFinished();
+    void onPauseClicked();
 
     // Report
     void onExportReport();
@@ -83,7 +87,6 @@ private slots:
 
 private:
     void setConnectedUiState(bool connected);
-    void appendFrameRow(const CanFrame &frame);
     void buildLiveDataTable();
     void buildDashboardTab(QTabWidget *tabs);
     void buildVehicleInfoTab(QTabWidget *tabs);
@@ -151,8 +154,12 @@ private:
     QPushButton *m_clearButton;
     QPushButton *m_recordButton;
     QPushButton *m_replayButton;
-    QTableWidget *m_frameTable;
+    QPushButton *m_pauseButton;
+    QTableView *m_frameView;
+    FrameTableModel *m_frameModel;
+    QSortFilterProxyModel *m_frameProxy;
     QLabel *m_frameCountLabel;
+    bool m_paused = false;
 
     QPlainTextEdit *m_logView;
 

@@ -20,15 +20,18 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QSortFilterProxyModel>
 #include <QSplitter>
 #include <QStatusBar>
 #include <QStyleFactory>
 #include <QTabWidget>
+#include <QTableView>
 #include <QTableWidget>
 #include <QVBoxLayout>
 #include <QWidget>
 
 #include "Elm327Connection.h"
+#include "FrameTableModel.h"
 #include "GaugeWidget.h"
 #include "LiveChartWidget.h"
 #include "NewConnectionDialog.h"
@@ -40,20 +43,7 @@
 #include "VehicleStore.h"
 
 namespace {
-constexpr int kMaxDisplayedRows = 5000;
-
-QString formatHexId(quint32 id, bool extended)
-{
-    return QStringLiteral("0x%1").arg(id, extended ? 8 : 3, 16, QChar('0')).toUpper();
-}
-
-QString formatHexBytes(const CanFrame &frame)
-{
-    QStringList parts;
-    for (int i = 0; i < frame.length; ++i)
-        parts << QStringLiteral("%1").arg(frame.data[i], 2, 16, QChar('0')).toUpper();
-    return parts.join(' ');
-}
+// Frame formatting/trimming now lives in FrameTableModel.
 }
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
@@ -208,18 +198,33 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     testBar->addStretch();
     rawLayout->addLayout(testBar);
 
-    m_frameTable = new QTableWidget(0, 6, rawPage);
-    m_frameTable->setHorizontalHeaderLabels({"Time (s)", "Bus", "ID", "Ext", "DLC", "Data"});
-    m_frameTable->horizontalHeader()->setSectionResizeMode(5, QHeaderView::Stretch);
-    m_frameTable->verticalHeader()->setVisible(false);
-    m_frameTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    m_frameTable->setSelectionBehavior(QAbstractItemView::SelectRows);
-    rawLayout->addWidget(m_frameTable, 1);
+    // Model/view so columns are sortable (click a header to sort; click again to
+    // reverse). The proxy sorts by FrameTableModel::SortRole, which returns
+    // numeric keys, so IDs and timestamps order by value rather than by text.
+    m_frameModel = new FrameTableModel(this);
+    m_frameProxy = new QSortFilterProxyModel(this);
+    m_frameProxy->setSourceModel(m_frameModel);
+    m_frameProxy->setSortRole(FrameTableModel::SortRole);
+
+    m_frameView = new QTableView(rawPage);
+    m_frameView->setModel(m_frameProxy);
+    m_frameView->setSortingEnabled(true);
+    m_frameView->sortByColumn(FrameTableModel::Time, Qt::AscendingOrder); // default: arrival order
+    m_frameView->horizontalHeader()->setSectionResizeMode(FrameTableModel::Data, QHeaderView::Stretch);
+    m_frameView->verticalHeader()->setVisible(false);
+    m_frameView->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_frameView->setSelectionBehavior(QAbstractItemView::SelectRows);
+    rawLayout->addWidget(m_frameView, 1);
 
     auto *bottomBar = new QHBoxLayout();
     m_autoScrollCheck = new QCheckBox("Auto-scroll");
     m_autoScrollCheck->setChecked(true);
     bottomBar->addWidget(m_autoScrollCheck);
+
+    m_pauseButton = new QPushButton("Pause");
+    m_pauseButton->setToolTip("Freeze the view so you can inspect and sort captured frames.");
+    connect(m_pauseButton, &QPushButton::clicked, this, &MainWindow::onPauseClicked);
+    bottomBar->addWidget(m_pauseButton);
 
     m_clearButton = new QPushButton("Clear");
     connect(m_clearButton, &QPushButton::clicked, this, &MainWindow::onClearClicked);
@@ -875,44 +880,41 @@ void MainWindow::flushPendingFrames()
     if (m_pendingFrames.isEmpty())
         return;
 
+    // While paused, freeze the view: drop pending display frames (recording, if
+    // active, still captured them upstream in onFrameReceived).
+    if (m_paused) {
+        m_pendingFrames.clear();
+        return;
+    }
+
     const QVector<CanFrame> batch = std::move(m_pendingFrames);
     m_pendingFrames.clear();
 
-    m_frameTable->setUpdatesEnabled(false);
-    for (const CanFrame &frame : batch)
-        appendFrameRow(frame);
-    m_frameTable->setUpdatesEnabled(true);
+    m_frameModel->addFrames(batch);
 
-    if (m_autoScrollCheck->isChecked())
-        m_frameTable->scrollToBottom();
+    // Auto-scroll only makes sense in arrival order; skip it if the user has
+    // sorted by a column (the newest frame may not be at the bottom).
+    if (m_autoScrollCheck->isChecked() && m_frameView->horizontalHeader()->sortIndicatorSection() == FrameTableModel::Time
+        && m_frameView->horizontalHeader()->sortIndicatorOrder() == Qt::AscendingOrder)
+        m_frameView->scrollToBottom();
 
     m_frameCount += batch.size();
     m_frameCountLabel->setText(QString("Frames: %1").arg(m_frameCount));
 }
 
-void MainWindow::appendFrameRow(const CanFrame &frame)
-{
-    int row = m_frameTable->rowCount();
-    m_frameTable->insertRow(row);
-
-    const double seconds = frame.timestampUs / 1000000.0;
-    m_frameTable->setItem(row, 0, new QTableWidgetItem(QString::number(seconds, 'f', 6)));
-    m_frameTable->setItem(row, 1, new QTableWidgetItem(QString::number(frame.bus)));
-    m_frameTable->setItem(row, 2, new QTableWidgetItem(formatHexId(frame.id, frame.extended)));
-    m_frameTable->setItem(row, 3, new QTableWidgetItem(frame.extended ? "Yes" : "No"));
-    m_frameTable->setItem(row, 4, new QTableWidgetItem(QString::number(frame.length)));
-    m_frameTable->setItem(row, 5, new QTableWidgetItem(formatHexBytes(frame)));
-
-    while (m_frameTable->rowCount() > kMaxDisplayedRows)
-        m_frameTable->removeRow(0);
-}
-
 void MainWindow::onClearClicked()
 {
     m_pendingFrames.clear();
-    m_frameTable->setRowCount(0);
+    m_frameModel->clear();
     m_frameCount = 0;
     m_frameCountLabel->setText("Frames: 0");
+}
+
+void MainWindow::onPauseClicked()
+{
+    m_paused = !m_paused;
+    m_pauseButton->setText(m_paused ? "Resume" : "Pause");
+    onLogMessage(m_paused ? "Raw traffic view paused." : "Raw traffic view resumed.");
 }
 
 void MainWindow::onDeviceInfoReceived(int buildNumber, int singleWireMode)
