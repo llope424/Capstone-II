@@ -47,6 +47,18 @@ qt_add_executable(ObdSuite
     src/FrameSummaryModel.h
     src/FrameSummaryModel.cpp
     src/CanFrame.h
+    # --- In-app ELM327 emulator (Widgets control window + backend engine) ---
+    src/emulator/Elm327EmulatorEngine.h
+    src/emulator/Elm327EmulatorEngine.cpp
+    src/emulator/ObdMessageModel.h
+    src/emulator/ObdMessageModel.cpp
+    src/emulator/PidEncoders.h
+    src/emulator/PidEncoders.cpp
+    src/emulator/EmulatorTransport.h
+    src/emulator/EmulatorTransport.cpp
+    src/emulator/EmulatorWindow.h
+    src/emulator/EmulatorWindow.cpp
+    resources/emulator/emulator.qrc
 )
 
 target_link_libraries(ObdSuite PRIVATE Qt6::Widgets Qt6::SerialPort Qt6::Network)
@@ -54,3 +66,7 @@ target_link_libraries(ObdSuite PRIVATE Qt6::Widgets Qt6::SerialPort Qt6::Network
 set_target_properties(ObdSuite PROPERTIES
     WIN32_EXECUTABLE ON
 )
+
+# --- Unit tests (additive; does not affect the ObdSuite target) ---
+enable_testing()
+add_subdirectory(tests)

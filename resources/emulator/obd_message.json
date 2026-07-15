@@ -1,0 +1,63 @@
+{
+  "_comment": "Emulator scenario presets. PID values are engineering units (rpm, km/h, degC, %, V, kPa) and are encoded to raw OBD bytes on load. Adopts the scenario idea from the Python ELM327-emulator ObdMessage dictionary.",
+  "scenarios": [
+    {
+      "name": "Healthy (default)",
+      "vin": "1HGBH41JXMN109186",
+      "calIds": ["OBDSUITEECU01"],
+      "pids": {
+        "0x04": 22,
+        "0x05": 88,
+        "0x0A": 320,
+        "0x0C": 820,
+        "0x0D": 0,
+        "0x0F": 30,
+        "0x11": 14,
+        "0x42": 14.2
+      },
+      "dtcs": { "stored": [], "pending": [], "permanent": [] }
+    },
+    {
+      "name": "Misfire (P0301)",
+      "vin": "1HGBH41JXMN109186",
+      "pids": {
+        "0x04": 58,
+        "0x05": 96,
+        "0x0C": 3200,
+        "0x0D": 45,
+        "0x0F": 34,
+        "0x11": 38,
+        "0x42": 14.0
+      },
+      "dtcs": { "stored": ["P0300", "P0301"], "pending": ["P0301"], "permanent": [] }
+    },
+    {
+      "name": "Catalyst (P0420)",
+      "vin": "1HGBH41JXMN109186",
+      "pids": {
+        "0x04": 34,
+        "0x05": 99,
+        "0x0C": 1500,
+        "0x0D": 60,
+        "0x0F": 40,
+        "0x11": 22,
+        "0x42": 14.1
+      },
+      "dtcs": { "stored": ["P0420"], "pending": [], "permanent": ["P0420"] }
+    },
+    {
+      "name": "Engine off",
+      "vin": "1HGBH41JXMN109186",
+      "pids": {
+        "0x04": 0,
+        "0x05": 21,
+        "0x0C": 0,
+        "0x0D": 0,
+        "0x0F": 21,
+        "0x11": 0,
+        "0x42": 12.4
+      },
+      "dtcs": { "stored": [], "pending": [], "permanent": [] }
+    }
+  ]
+}

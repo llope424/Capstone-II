@@ -36,6 +36,7 @@
 #include <QShortcut>
 
 #include "Elm327Connection.h"
+#include "emulator/EmulatorWindow.h"
 #include "FrameSummaryModel.h"
 #include "FrameTableModel.h"
 #include "GaugeWidget.h"
@@ -576,10 +577,25 @@ void MainWindow::buildMenus()
     auto *quitAction = fileMenu->addAction("E&xit");
     connect(quitAction, &QAction::triggered, this, &QWidget::close);
 
+    auto *emulatorMenu = menuBar()->addMenu("&Emulator");
+    auto *openEmuAction = emulatorMenu->addAction("&Open Emulator...");
+    connect(openEmuAction, &QAction::triggered, this, &MainWindow::onOpenEmulator);
+
     auto *viewMenu = menuBar()->addMenu("&View");
     auto *darkAction = viewMenu->addAction("&Dark Theme");
     darkAction->setCheckable(true);
     connect(darkAction, &QAction::toggled, this, &MainWindow::onToggleTheme);
+}
+
+void MainWindow::onOpenEmulator()
+{
+    // Non-modal so the app can connect to the emulator it is serving (e.g. over
+    // TCP localhost) while this window stays open. Created once, reused after.
+    if (!m_emulatorWindow)
+        m_emulatorWindow = new EmulatorWindow(this);
+    m_emulatorWindow->show();
+    m_emulatorWindow->raise();
+    m_emulatorWindow->activateWindow();
 }
 
 void MainWindow::buildLiveDataTable()

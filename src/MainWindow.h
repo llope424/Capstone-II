@@ -17,6 +17,7 @@ class FrameTableModel;
 class FrameSummaryModel;
 class GaugeWidget;
 class LiveChartWidget;
+class EmulatorWindow;
 
 QT_BEGIN_NAMESPACE
 class QPushButton;
@@ -73,6 +74,9 @@ private slots:
     // Report
     void onExportReport();
     void onToggleTheme(bool dark);
+
+    // Emulator (in-app ELM327 emulator control window)
+    void onOpenEmulator();
 
     // Vehicles / history
     void onAddVehicle();
@@ -179,4 +183,6 @@ private:
     QStringList m_calIds;
 
     quint64 m_frameCount = 0;
+
+    EmulatorWindow *m_emulatorWindow = nullptr; // lazily created, non-modal
 };

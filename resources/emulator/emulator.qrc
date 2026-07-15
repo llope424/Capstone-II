@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/emulator">
+        <file alias="obd_message.json">obd_message.json</file>
+    </qresource>
+</RCC>
