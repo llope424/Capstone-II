@@ -55,7 +55,8 @@ namespace {
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
-    setWindowTitle("OBD Suite - Raw Traffic Viewer");
+    setWindowTitle(QString("OBD Suite v%1 - Raw Traffic Viewer")
+                       .arg(QApplication::applicationVersion()));
     resize(1000, 650);
 
     m_connection = new GvretConnection(this);

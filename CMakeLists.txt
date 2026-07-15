@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(ObdSuite LANGUAGES CXX)
+project(ObdSuite VERSION 1.1.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -62,6 +62,10 @@ qt_add_executable(ObdSuite
 )
 
 target_link_libraries(ObdSuite PRIVATE Qt6::Widgets Qt6::SerialPort Qt6::Network)
+
+# Single source of truth for the app version (shown in the title bar and used
+# by setApplicationVersion); keep GitHub release tags and ZIP names in sync.
+target_compile_definitions(ObdSuite PRIVATE OBDSUITE_VERSION="${PROJECT_VERSION}")
 
 set_target_properties(ObdSuite PROPERTIES
     WIN32_EXECUTABLE ON

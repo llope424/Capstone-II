@@ -118,6 +118,7 @@ void Elm327Connection::beginSession()
     m_queue.clear();
     m_rxBuf.clear();
     m_commandInFlight = false;
+    m_clock.start();
 
     // Standard ELM327 init: reset, echo off, linefeeds off, headers off, auto
     // protocol. Each is queued as an Init command; finishConnect() runs after
@@ -221,6 +222,9 @@ QVector<quint8> Elm327Connection::parseHexBytes(const QString &s)
 void Elm327Connection::synthesizeFrame(quint32 id, const QVector<quint8> &data)
 {
     CanFrame f;
+    // The ELM327 doesn't report frame times, so stamp with our own clock,
+    // microseconds since session start (same convention as the GVRET scanner).
+    f.timestampUs = quint32(m_clock.nsecsElapsed() / 1000);
     f.id = id;
     f.extended = false;
     f.bus = 0;
@@ -283,33 +287,51 @@ void Elm327Connection::handleResponse(const Command &cmd, const QString &respons
         break;
     }
     case Kind::Dtc: {
-        int idx = bytes.indexOf(0x43);
-        // 0x47 / 0x4A for pending / permanent
-        if (idx < 0) idx = bytes.indexOf(0x47);
-        if (idx < 0) idx = bytes.indexOf(0x4A);
+        // A DTC request is a functional (broadcast) query: EVERY ECU on the
+        // bus answers, each on its own line — including "43 00" from ECUs
+        // with no codes. Parse per line; flattening the whole response into
+        // one byte stream misaligns the pairs (that produced phantom P0043s
+        // on a real car). A multi-frame ISO-TP answer arrives as numbered
+        // "N: .." segment lines preceded by a byte-count line; regroup those
+        // into a single message.
+        const quint8 expected = cmd.mode + 0x40; // 43 / 47 / 4A
+        QList<QVector<quint8>> messages;
+        QVector<quint8> multiFrame;
+        const QStringList lines =
+            clean.split(QRegularExpression("[\\r\\n]+"), Qt::SkipEmptyParts);
+        for (const QString &line : lines) {
+            const QVector<quint8> lineBytes = parseHexBytes(line);
+            if (lineBytes.isEmpty())
+                continue; // e.g. the byte-count line before multi-frame data
+            if (line.contains(':'))
+                multiFrame += lineBytes;
+            else
+                messages.append(lineBytes);
+        }
+        if (!multiFrame.isEmpty())
+            messages.append(multiFrame);
+
         QStringList codes;
-        if (idx >= 0) {
-            int p = idx + 1;
-            // Optional count byte, then 2-byte DTCs.
-            if (p < bytes.size()) {
-                int count = bytes.at(p);
-                // Heuristic: if the "count" is implausible vs remaining bytes,
-                // treat everything as DTC pairs (some adapters omit the count).
-                const int remainingPairs = (bytes.size() - (p + 1)) / 2;
-                if (count > 0 && count <= remainingPairs) {
-                    p += 1;
-                    for (int i = 0; i < count && p + 1 < bytes.size(); ++i, p += 2) {
-                        const quint8 a = bytes.at(p), b = bytes.at(p + 1);
-                        if (a == 0 && b == 0) continue;
-                        codes << ObdDtcClient::decodeDtc(a, b);
-                    }
-                } else {
-                    for (; p + 1 < bytes.size(); p += 2) {
-                        const quint8 a = bytes.at(p), b = bytes.at(p + 1);
-                        if (a == 0 && b == 0) continue;
-                        codes << ObdDtcClient::decodeDtc(a, b);
-                    }
-                }
+        for (const QVector<quint8> &msg : messages) {
+            if (msg.size() < 2 || msg.at(0) != expected)
+                continue;
+            // ISO 15765 (CAN): [service][count][pairs...]. Legacy protocols
+            // (ISO 9141 / KWP / J1850) omit the count byte and zero-pad.
+            const quint8 count = msg.at(1);
+            const int pairBytes = msg.size() - 2;
+            int p = 2;
+            int pairs = count;
+            if (pairBytes % 2 != 0 || count > pairBytes / 2) {
+                p = 1;
+                pairs = (msg.size() - 1) / 2;
+            }
+            for (int i = 0; i < pairs && p + 1 < msg.size(); ++i, p += 2) {
+                const quint8 a = msg.at(p), b = msg.at(p + 1);
+                if (a == 0 && b == 0)
+                    continue; // zero-padding / empty slot
+                const QString code = ObdDtcClient::decodeDtc(a, b);
+                if (!codes.contains(code)) // same code from several ECUs
+                    codes << code;
             }
         }
         emit dtcsReceived(cmd.mode, codes);
