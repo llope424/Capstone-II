@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QByteArray>
+#include <QElapsedTimer>
 #include <QObject>
 #include <QQueue>
 #include <QStringList>
@@ -104,4 +105,5 @@ private:
     bool m_connected = false;
     int m_initStep = 0;                // progress through the AT init sequence
     int m_baudAttempt = 0;             // serial auto-baud attempt index
+    QElapsedTimer m_clock;             // timestamps synthesized frames, like the scanner clock
 };
