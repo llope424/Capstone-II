@@ -47,6 +47,14 @@ qt_add_executable(ObdSuite
     src/FrameSummaryModel.h
     src/FrameSummaryModel.cpp
     src/CanFrame.h
+    src/AppSettings.h
+    src/AppSettings.cpp
+    src/Units.h
+    src/Units.cpp
+    src/PreferencesDialog.h
+    src/PreferencesDialog.cpp
+    src/DashboardConfigDialog.h
+    src/DashboardConfigDialog.cpp
     # --- In-app ELM327 emulator (Widgets control window + backend engine) ---
     src/emulator/Elm327EmulatorEngine.h
     src/emulator/Elm327EmulatorEngine.cpp

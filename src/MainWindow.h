@@ -32,6 +32,8 @@ class QComboBox;
 class QTabWidget;
 class QAction;
 class QListWidget;
+class QGridLayout;
+class QCloseEvent;
 QT_END_NAMESPACE
 
 class MainWindow : public QMainWindow
@@ -75,6 +77,10 @@ private slots:
     void onExportReport();
     void onToggleTheme(bool dark);
 
+    // Personalization
+    void onPreferences();
+    void onConfigureDashboard();
+
     // Emulator (in-app ELM327 emulator control window)
     void onOpenEmulator();
 
@@ -93,10 +99,15 @@ private slots:
     void onLogMessage(const QString &text);
     void flushPendingFrames();
 
+protected:
+    void closeEvent(QCloseEvent *event) override;
+
 private:
     void setConnectedUiState(bool connected);
     void buildLiveDataTable();
     void buildDashboardTab(QTabWidget *tabs);
+    void rebuildGauges();
+    void applyDisplayUnits();
     void buildVehicleInfoTab(QTabWidget *tabs);
     void buildVehiclesTab(QTabWidget *tabs);
     void refreshVehicleList();
@@ -129,8 +140,14 @@ private:
 
     // Dashboard tab
     QHash<quint8, GaugeWidget *> m_gauges; // PID -> gauge
+    QGridLayout *m_gaugeGrid = nullptr;    // rebuilt from the saved layout config
     LiveChartWidget *m_chart;
     QComboBox *m_chartPidCombo;
+
+    // Personalization state
+    QAction *m_darkAction = nullptr;
+    bool m_imperial = false;            // cached AppSettings::imperialUnits()
+    QHash<quint8, QString> m_pidUnit;   // PID -> metric source unit
 
     // Trouble Codes tab
     QPushButton *m_readStoredButton;

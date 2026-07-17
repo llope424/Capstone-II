@@ -31,11 +31,17 @@
 #include <QWidget>
 
 #include <QClipboard>
+#include <QCloseEvent>
 #include <QGuiApplication>
 #include <QKeySequence>
 #include <QShortcut>
+#include <QToolBar>
 
+#include "AppSettings.h"
+#include "DashboardConfigDialog.h"
 #include "Elm327Connection.h"
+#include "PreferencesDialog.h"
+#include "Units.h"
 #include "emulator/EmulatorWindow.h"
 #include "FrameSummaryModel.h"
 #include "FrameTableModel.h"
@@ -51,6 +57,35 @@
 
 namespace {
 // Frame formatting/trimming now lives in FrameTableModel.
+
+// Display ranges (and optional red-zone thresholds) for the gauges, in metric
+// source units. This is the catalog the dashboard layout editor offers; the
+// user picks which of these appear and in what order (SDD FR-6).
+struct GaugeCatalogEntry
+{
+    quint8 pid;
+    double min;
+    double max;
+    bool hasWarn;
+    double warn;
+};
+
+const QVector<GaugeCatalogEntry> &gaugeCatalog()
+{
+    static const QVector<GaugeCatalogEntry> catalog = {
+        {0x0C, 0, 8000, true, 6500},   // Engine RPM
+        {0x0D, 0, 240, false, 0},      // Vehicle Speed
+        {0x05, -40, 150, true, 105},   // Coolant Temperature
+        {0x04, 0, 100, false, 0},      // Engine Load
+        {0x11, 0, 100, false, 0},      // Throttle Position
+        {0x0F, -40, 150, false, 0},    // Intake Air Temperature
+        {0x42, 0, 16, false, 0},       // Control Module Voltage
+        {0x0A, 0, 765, false, 0},      // Fuel Pressure
+        {0x06, -100, 100, false, 0},   // Short-Term Fuel Trim B1
+        {0x14, 0, 1.3, false, 0},      // O2 Sensor 1 Voltage
+    };
+    return catalog;
+}
 }
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
@@ -58,6 +93,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     setWindowTitle(QString("OBD Suite v%1 - Raw Traffic Viewer")
                        .arg(QApplication::applicationVersion()));
     resize(1000, 650);
+    m_imperial = AppSettings::imperialUnits(); // needed before the tabs are built
 
     m_connection = new GvretConnection(this);
     connect(m_connection, &GvretConnection::connected, this, &MainWindow::onConnected);
@@ -323,6 +359,15 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
     buildMenus();
     buildLiveDataTable();
+
+    // Status bar: version stamp plus transient connection messages.
+    auto *versionLabel = new QLabel(QString("v%1").arg(QApplication::applicationVersion()));
+    statusBar()->addPermanentWidget(versionLabel);
+    statusBar()->showMessage("Disconnected");
+
+    const QByteArray geometry = AppSettings::windowGeometry();
+    if (!geometry.isEmpty())
+        restoreGeometry(geometry);
 }
 
 void MainWindow::buildVehicleInfoTab(QTabWidget *tabs)
@@ -574,6 +619,8 @@ void MainWindow::buildMenus()
     auto *fileMenu = menuBar()->addMenu("&File");
     auto *exportAction = fileMenu->addAction("&Export Report...");
     connect(exportAction, &QAction::triggered, this, &MainWindow::onExportReport);
+    auto *prefsAction = fileMenu->addAction("&Preferences...");
+    connect(prefsAction, &QAction::triggered, this, &MainWindow::onPreferences);
     fileMenu->addSeparator();
     auto *quitAction = fileMenu->addAction("E&xit");
     connect(quitAction, &QAction::triggered, this, &QWidget::close);
@@ -583,9 +630,167 @@ void MainWindow::buildMenus()
     connect(openEmuAction, &QAction::triggered, this, &MainWindow::onOpenEmulator);
 
     auto *viewMenu = menuBar()->addMenu("&View");
-    auto *darkAction = viewMenu->addAction("&Dark Theme");
-    darkAction->setCheckable(true);
-    connect(darkAction, &QAction::toggled, this, &MainWindow::onToggleTheme);
+    m_darkAction = viewMenu->addAction("&Dark Theme");
+    m_darkAction->setCheckable(true);
+    connect(m_darkAction, &QAction::toggled, this, &MainWindow::onToggleTheme);
+    // Restore the saved theme; setChecked fires the toggled handler above.
+    m_darkAction->setChecked(AppSettings::darkTheme());
+
+    // Toolbar mirroring the most common actions, with standard-style icons so
+    // no image assets are needed.
+    auto *toolbar = addToolBar("Main");
+    toolbar->setMovable(false);
+    toolbar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    auto *style = this->style();
+    auto *tbConnect = toolbar->addAction(style->standardIcon(QStyle::SP_DriveNetIcon),
+                                         "Connect");
+    tbConnect->setToolTip("Open or close a scanner connection (same as New Connection).");
+    connect(tbConnect, &QAction::triggered, this, &MainWindow::onConnectButtonClicked);
+    auto *tbDtcs = toolbar->addAction(style->standardIcon(QStyle::SP_MessageBoxWarning),
+                                      "Read DTCs");
+    tbDtcs->setToolTip("Read stored trouble codes (service 03).");
+    connect(tbDtcs, &QAction::triggered, this, &MainWindow::onReadStoredClicked);
+    auto *tbExport = toolbar->addAction(style->standardIcon(QStyle::SP_DialogSaveButton),
+                                        "Export");
+    tbExport->setToolTip("Export a diagnostic report (PDF / CSV / JSON).");
+    connect(tbExport, &QAction::triggered, this, &MainWindow::onExportReport);
+    auto *tbEmulator = toolbar->addAction(style->standardIcon(QStyle::SP_ComputerIcon),
+                                          "Emulator");
+    tbEmulator->setToolTip("Open the built-in ELM327 emulator.");
+    connect(tbEmulator, &QAction::triggered, this, &MainWindow::onOpenEmulator);
+    auto *tbPrefs = toolbar->addAction(style->standardIcon(QStyle::SP_FileDialogDetailedView),
+                                       "Preferences");
+    tbPrefs->setToolTip("Theme, units, and live-data settings.");
+    connect(tbPrefs, &QAction::triggered, this, &MainWindow::onPreferences);
+}
+
+void MainWindow::onPreferences()
+{
+    PreferencesDialog dialog(this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    // Theme (the action's toggled handler applies and persists it).
+    m_darkAction->setChecked(AppSettings::darkTheme());
+
+    // Units: refresh every value display so labels and numbers stay consistent.
+    const bool imperial = AppSettings::imperialUnits();
+    if (imperial != m_imperial) {
+        m_imperial = imperial;
+        applyDisplayUnits();
+    }
+
+    // Poll rate: applies on the next start; restart live monitoring if active
+    // so the change is immediate.
+    const bool running = m_activeElm ? m_elm->isMonitoring() : m_pidMonitor->isRunning();
+    if (running) {
+        if (m_activeElm) {
+            m_elm->stopMonitoring();
+            m_elm->startMonitoring(AppSettings::pollIntervalMs());
+        } else {
+            m_pidMonitor->stop();
+            m_pidMonitor->start(AppSettings::pollIntervalMs());
+        }
+    }
+}
+
+void MainWindow::onConfigureDashboard()
+{
+    // Offer every catalog PID the monitor actually knows, in catalog order.
+    const QVector<PidDefinition> &defs = m_pidMonitor->definitions();
+    QVector<QPair<int, QString>> available;
+    for (const GaugeCatalogEntry &entry : gaugeCatalog()) {
+        for (const PidDefinition &def : defs) {
+            if (def.pid == entry.pid) {
+                available.append({entry.pid, def.name});
+                break;
+            }
+        }
+    }
+
+    DashboardConfigDialog dialog(available, AppSettings::dashboardPids(),
+                                 AppSettings::dashboardColumns(), this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    AppSettings::setDashboardPids(dialog.selectedPids());
+    AppSettings::setDashboardColumns(dialog.columns());
+    rebuildGauges();
+}
+
+void MainWindow::rebuildGauges()
+{
+    // Tear down the existing grid (widgets and layout items both).
+    while (QLayoutItem *item = m_gaugeGrid->takeAt(0)) {
+        delete item->widget();
+        delete item;
+    }
+    m_gauges.clear();
+
+    const QVector<PidDefinition> &defs = m_pidMonitor->definitions();
+    const QList<int> pids = AppSettings::dashboardPids();
+    const int columns = qMax(1, AppSettings::dashboardColumns());
+
+    int col = 0, rowIdx = 0;
+    for (int pidValue : pids) {
+        const GaugeCatalogEntry *cfg = nullptr;
+        for (const GaugeCatalogEntry &entry : gaugeCatalog()) {
+            if (entry.pid == pidValue) {
+                cfg = &entry;
+                break;
+            }
+        }
+        if (!cfg)
+            continue;
+
+        QString name, unit;
+        for (const PidDefinition &def : defs) {
+            if (def.pid == cfg->pid) {
+                name = def.name;
+                unit = def.unit;
+                break;
+            }
+        }
+        if (name.isEmpty())
+            continue;
+
+        // Ranges are cataloged in metric; convert the whole dial when the user
+        // prefers imperial so the needle and numbers agree.
+        const double min = Units::display(cfg->min, unit, m_imperial);
+        const double max = Units::display(cfg->max, unit, m_imperial);
+        auto *gauge = new GaugeWidget(name, Units::displayUnit(unit, m_imperial),
+                                      min, max, m_gaugeGrid->parentWidget());
+        if (cfg->hasWarn)
+            gauge->setWarnThreshold(Units::display(cfg->warn, unit, m_imperial));
+        m_gaugeGrid->addWidget(gauge, rowIdx, col);
+        m_gauges.insert(cfg->pid, gauge);
+
+        if (++col >= columns) {
+            col = 0;
+            ++rowIdx;
+        }
+    }
+}
+
+void MainWindow::applyDisplayUnits()
+{
+    // Unit column labels on the Live Data tab; stale values are reset so a
+    // number is never shown against the wrong unit.
+    for (auto it = m_pidRow.constBegin(); it != m_pidRow.constEnd(); ++it) {
+        QTableWidgetItem *unitItem = m_pidTable->item(it.value(), 2);
+        if (unitItem)
+            unitItem->setText(Units::displayUnit(m_pidUnit.value(it.key()), m_imperial));
+        QTableWidgetItem *valueItem = m_pidTable->item(it.value(), 1);
+        if (valueItem)
+            valueItem->setText("--");
+    }
+    rebuildGauges();
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    AppSettings::setWindowGeometry(saveGeometry());
+    QMainWindow::closeEvent(event);
 }
 
 void MainWindow::onOpenEmulator()
@@ -607,76 +812,31 @@ void MainWindow::buildLiveDataTable()
         const PidDefinition &def = defs.at(i);
         m_pidTable->setItem(i, 0, new QTableWidgetItem(def.name));
         m_pidTable->setItem(i, 1, new QTableWidgetItem("--"));
-        m_pidTable->setItem(i, 2, new QTableWidgetItem(def.unit));
+        m_pidTable->setItem(i, 2, new QTableWidgetItem(Units::displayUnit(def.unit, m_imperial)));
         m_pidRow.insert(def.pid, i);
+        m_pidUnit.insert(def.pid, def.unit);
     }
 }
 
 void MainWindow::buildDashboardTab(QTabWidget *tabs)
 {
-    // Display ranges (and optional red-zone thresholds) for the gauges. Only PIDs
-    // that read well as a dial get one; the rest still appear on the Live Data
-    // tab and are selectable in the chart.
-    struct GaugeConfig
-    {
-        quint8 pid;
-        double min;
-        double max;
-        bool hasWarn;
-        double warn;
-    };
-    static const QVector<GaugeConfig> configs = {
-        {0x0C, 0, 8000, true, 6500},   // Engine RPM
-        {0x0D, 0, 240, false, 0},      // Vehicle Speed
-        {0x05, -40, 150, true, 105},   // Coolant Temperature
-        {0x04, 0, 100, false, 0},      // Engine Load
-        {0x11, 0, 100, false, 0},      // Throttle Position
-        {0x0F, -40, 150, false, 0},    // Intake Air Temperature
-        {0x42, 0, 16, false, 0},       // Control Module Voltage
-        {0x0A, 0, 765, false, 0},      // Fuel Pressure
-    };
-
     auto *dashPage = new QWidget();
     auto *dashLayout = new QVBoxLayout(dashPage);
 
-    // Gauge grid inside a scroll area so it stays usable on small windows.
+    // Gauge grid inside a scroll area so it stays usable on small windows. The
+    // grid contents come from the saved layout config; see rebuildGauges().
     auto *gaugeContainer = new QWidget();
-    auto *grid = new QGridLayout(gaugeContainer);
+    m_gaugeGrid = new QGridLayout(gaugeContainer);
     const QVector<PidDefinition> &defs = m_pidMonitor->definitions();
-
-    int col = 0, rowIdx = 0;
-    const int columns = 4;
-    for (const GaugeConfig &cfg : configs) {
-        // Look up name/unit from the monitor's PID definitions.
-        QString name, unit;
-        for (const PidDefinition &def : defs) {
-            if (def.pid == cfg.pid) {
-                name = def.name;
-                unit = def.unit;
-                break;
-            }
-        }
-        if (name.isEmpty())
-            continue;
-
-        auto *gauge = new GaugeWidget(name, unit, cfg.min, cfg.max, gaugeContainer);
-        if (cfg.hasWarn)
-            gauge->setWarnThreshold(cfg.warn);
-        grid->addWidget(gauge, rowIdx, col);
-        m_gauges.insert(cfg.pid, gauge);
-
-        if (++col >= columns) {
-            col = 0;
-            ++rowIdx;
-        }
-    }
 
     auto *scroll = new QScrollArea();
     scroll->setWidgetResizable(true);
     scroll->setWidget(gaugeContainer);
     dashLayout->addWidget(scroll, 2);
 
-    // Live chart with a PID selector.
+    rebuildGauges();
+
+    // Live chart with a PID selector, plus the dashboard layout editor.
     auto *chartBar = new QHBoxLayout();
     chartBar->addWidget(new QLabel("Chart:"));
     m_chartPidCombo = new QComboBox();
@@ -684,6 +844,11 @@ void MainWindow::buildDashboardTab(QTabWidget *tabs)
         m_chartPidCombo->addItem(def.name, def.pid);
     chartBar->addWidget(m_chartPidCombo);
     chartBar->addStretch();
+    auto *configButton = new QPushButton("Configure Layout...");
+    configButton->setToolTip("Choose which gauges appear on the dashboard, their order, "
+                             "and how many fit per row. The layout is remembered.");
+    connect(configButton, &QPushButton::clicked, this, &MainWindow::onConfigureDashboard);
+    chartBar->addWidget(configButton);
     dashLayout->addLayout(chartBar);
 
     m_chart = new LiveChartWidget(dashPage);
@@ -767,6 +932,7 @@ void MainWindow::onConnected()
 {
     m_statusLabel->setText("Connected");
     m_statusLabel->setStyleSheet("font-weight: bold; color: #292;");
+    statusBar()->showMessage("Connected");
     m_testRequestButton->setEnabled(true);
     m_monitorButton->setEnabled(true);
     m_readVinButton->setEnabled(true);
@@ -787,6 +953,8 @@ void MainWindow::onDisconnected(const QString &reason)
     setConnectedUiState(false);
     m_statusLabel->setText("Disconnected");
     m_statusLabel->setStyleSheet("font-weight: bold; color: #a33;");
+    statusBar()->showMessage(reason.isEmpty() ? QStringLiteral("Disconnected")
+                                              : QString("Disconnected: %1").arg(reason));
     m_testRequestButton->setEnabled(false);
     m_readVinButton->setEnabled(false);
     m_readCalIdButton->setEnabled(false);
@@ -887,31 +1055,36 @@ void MainWindow::onMonitorButtonClicked()
         m_monitorButton->setText("Start Monitoring");
         onLogMessage("Stopped live PID monitoring.");
     } else {
-        if (m_activeElm) m_elm->startMonitoring();
-        else m_pidMonitor->start();
+        const int interval = AppSettings::pollIntervalMs();
+        if (m_activeElm) m_elm->startMonitoring(interval);
+        else m_pidMonitor->start(interval);
         m_monitorButton->setText("Stop Monitoring");
-        onLogMessage("Started live PID monitoring.");
+        onLogMessage(QString("Started live PID monitoring (%1 ms between requests).").arg(interval));
     }
 }
 
 void MainWindow::onPidUpdated(quint8 pid, double value)
 {
+    // Decode formulas produce metric values; convert once here so the table,
+    // gauges, and chart all show the same (possibly imperial) number.
+    const double shown = Units::display(value, m_pidUnit.value(pid), m_imperial);
+
     // Live Data table.
     const auto it = m_pidRow.constFind(pid);
     if (it != m_pidRow.constEnd()) {
         QTableWidgetItem *item = m_pidTable->item(it.value(), 1);
         if (item)
-            item->setText(QString::number(value, 'f', 1));
+            item->setText(QString::number(shown, 'f', 1));
     }
 
     // Dashboard gauge.
     const auto git = m_gauges.constFind(pid);
     if (git != m_gauges.constEnd())
-        git.value()->setValue(value);
+        git.value()->setValue(shown);
 
     // Live chart, if this PID is the selected series.
     if (m_chartPidCombo->currentData().toUInt() == pid)
-        m_chart->addSample(value);
+        m_chart->addSample(shown);
 }
 
 void MainWindow::onSendTestRequestClicked()
@@ -1206,6 +1379,7 @@ void MainWindow::onExportReport()
 
 void MainWindow::onToggleTheme(bool dark)
 {
+    AppSettings::setDarkTheme(dark);
     if (dark) {
         qApp->setStyle(QStyleFactory::create("Fusion"));
         QPalette p;
