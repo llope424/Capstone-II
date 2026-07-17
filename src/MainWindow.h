@@ -104,12 +104,14 @@ protected:
 
 private:
     void setConnectedUiState(bool connected);
+    void updateMonitorAction(bool running);
     void buildLiveDataTable();
     void buildDashboardTab(QTabWidget *tabs);
     void rebuildGauges();
     void applyDisplayUnits();
-    void buildVehicleInfoTab(QTabWidget *tabs);
-    void buildVehiclesTab(QTabWidget *tabs);
+    void buildVehicleTab(QTabWidget *tabs);
+    QWidget *buildVehicleInfoPane();
+    QWidget *buildVehiclesPane();
     void refreshVehicleList();
     void buildMenus();
     void setDtcButtonsEnabled(bool enabled);
@@ -129,12 +131,13 @@ private:
     QVector<CanFrame> m_pendingFrames;
     QTimer m_flushTimer;
 
-    QPushButton *m_connectButton; // "New Connection..." when idle, "Disconnect" when open
+    // Quick-access toolbar actions; the status bar carries the labels.
+    QAction *m_connectAction = nullptr; // "Connect..." when idle, "Disconnect" when open
+    QAction *m_monitorAction = nullptr; // Start/Stop Monitoring toggle
     QLabel *m_statusLabel;
     QLabel *m_deviceInfoLabel;
 
     // Live Data tab
-    QPushButton *m_monitorButton;
     QTableWidget *m_pidTable;
     QHash<quint8, int> m_pidRow; // PID -> row index in m_pidTable
 

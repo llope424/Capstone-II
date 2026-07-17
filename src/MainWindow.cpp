@@ -148,40 +148,20 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     auto *central = new QWidget(this);
     auto *rootLayout = new QVBoxLayout(central);
 
-    // --- Connection bar ---
-    auto *connBar = new QHBoxLayout();
-
-    m_connectButton = new QPushButton("New Connection...");
-    connect(m_connectButton, &QPushButton::clicked, this, &MainWindow::onConnectButtonClicked);
-    connBar->addWidget(m_connectButton);
-
+    // Connection state and adapter info live in the status bar; connecting is a
+    // toolbar action. No dedicated bars above the tabs.
     m_statusLabel = new QLabel("Disconnected");
     m_statusLabel->setStyleSheet("font-weight: bold; color: #a33;");
-    connBar->addWidget(m_statusLabel);
-
-    connBar->addStretch();
-    rootLayout->addLayout(connBar);
-
     m_deviceInfoLabel = new QLabel("No device info yet.");
-    rootLayout->addWidget(m_deviceInfoLabel);
 
     auto *tabs = new QTabWidget(central);
 
     // --- Dashboard tab (gauges + live chart) ---
     buildDashboardTab(tabs);
 
-    // --- Live Data tab ---
+    // --- Live Data tab (monitoring is started from the quick-access toolbar) ---
     auto *livePage = new QWidget();
     auto *liveLayout = new QVBoxLayout(livePage);
-
-    auto *liveBar = new QHBoxLayout();
-    m_monitorButton = new QPushButton("Start Monitoring");
-    m_monitorButton->setEnabled(false);
-    m_monitorButton->setToolTip("Continuously polls the standard OBD-II PIDs below and shows live decoded values.");
-    connect(m_monitorButton, &QPushButton::clicked, this, &MainWindow::onMonitorButtonClicked);
-    liveBar->addWidget(m_monitorButton);
-    liveBar->addStretch();
-    liveLayout->addLayout(liveBar);
 
     m_pidTable = new QTableWidget(0, 3, livePage);
     m_pidTable->setHorizontalHeaderLabels({"Parameter", "Value", "Unit"});
@@ -335,11 +315,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
     tabs->addTab(rawPage, "Raw Traffic");
 
-    // --- Vehicle Info tab ---
-    buildVehicleInfoTab(tabs);
-
-    // --- Vehicles tab (profiles + history) ---
-    buildVehiclesTab(tabs);
+    // --- Vehicle tab (info read from the car + saved profiles/history) ---
+    buildVehicleTab(tabs);
 
     // --- Connection log (persistent, unlike the transient status bar) ---
     m_logView = new QPlainTextEdit(central);
@@ -360,20 +337,37 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     buildMenus();
     buildLiveDataTable();
 
-    // Status bar: version stamp plus transient connection messages.
+    // Status bar: connection state on the left; adapter info and version on
+    // the right. Plain widgets (not showMessage) so nothing hides them.
+    statusBar()->addWidget(m_statusLabel);
+    statusBar()->addPermanentWidget(m_deviceInfoLabel);
     auto *versionLabel = new QLabel(QString("v%1").arg(QApplication::applicationVersion()));
     statusBar()->addPermanentWidget(versionLabel);
-    statusBar()->showMessage("Disconnected");
 
     const QByteArray geometry = AppSettings::windowGeometry();
     if (!geometry.isEmpty())
         restoreGeometry(geometry);
 }
 
-void MainWindow::buildVehicleInfoTab(QTabWidget *tabs)
+void MainWindow::buildVehicleTab(QTabWidget *tabs)
+{
+    // One tab for everything vehicle-related: live-read identification on the
+    // left, the saved profile garage on the right.
+    auto *splitter = new QSplitter(Qt::Horizontal);
+    splitter->addWidget(buildVehicleInfoPane());
+    splitter->addWidget(buildVehiclesPane());
+    splitter->setStretchFactor(0, 1);
+    splitter->setStretchFactor(1, 1);
+    tabs->addTab(splitter, "Vehicle");
+}
+
+QWidget *MainWindow::buildVehicleInfoPane()
 {
     auto *page = new QWidget();
     auto *layout = new QVBoxLayout(page);
+
+    auto *heading = new QLabel("<b>Read from vehicle</b>");
+    layout->addWidget(heading);
 
     auto *bar = new QHBoxLayout();
     m_readVinButton = new QPushButton("Read VIN");
@@ -407,7 +401,7 @@ void MainWindow::buildVehicleInfoTab(QTabWidget *tabs)
     m_readVinButton->setEnabled(false);
     m_readCalIdButton->setEnabled(false);
 
-    tabs->addTab(page, "Vehicle Info");
+    return page;
 }
 
 namespace {
@@ -455,10 +449,13 @@ bool editVehicleDialog(QWidget *parent, VehicleProfile &profile)
 }
 } // namespace
 
-void MainWindow::buildVehiclesTab(QTabWidget *tabs)
+QWidget *MainWindow::buildVehiclesPane()
 {
     auto *page = new QWidget();
-    auto *outer = new QHBoxLayout(page);
+    auto *pageLayout = new QVBoxLayout(page);
+    pageLayout->addWidget(new QLabel("<b>Saved vehicles</b>"));
+    auto *outer = new QHBoxLayout();
+    pageLayout->addLayout(outer, 1);
 
     // Left: vehicle list + add/edit/delete.
     auto *leftCol = new QVBoxLayout();
@@ -496,10 +493,9 @@ void MainWindow::buildVehiclesTab(QTabWidget *tabs)
     rightCol->addWidget(m_saveSessionButton);
     outer->addLayout(rightCol, 2);
 
-    tabs->addTab(page, "Vehicles");
-
     refreshVehicleList();
     onVehicleSelectionChanged();
+    return page;
 }
 
 void MainWindow::refreshVehicleList()
@@ -636,32 +632,42 @@ void MainWindow::buildMenus()
     // Restore the saved theme; setChecked fires the toggled handler above.
     m_darkAction->setChecked(AppSettings::darkTheme());
 
-    // Toolbar mirroring the most common actions, with standard-style icons so
-    // no image assets are needed.
-    auto *toolbar = addToolBar("Main");
+    // Quick-access toolbar: only the core session actions, in workflow order.
+    // Everything else (emulator, preferences, export) stays in the menus.
+    auto *toolbar = addToolBar("Quick Access");
     toolbar->setMovable(false);
     toolbar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     auto *style = this->style();
-    auto *tbConnect = toolbar->addAction(style->standardIcon(QStyle::SP_DriveNetIcon),
-                                         "Connect");
-    tbConnect->setToolTip("Open or close a scanner connection (same as New Connection).");
-    connect(tbConnect, &QAction::triggered, this, &MainWindow::onConnectButtonClicked);
+
+    m_connectAction = toolbar->addAction(style->standardIcon(QStyle::SP_DriveNetIcon),
+                                         "Connect...");
+    m_connectAction->setToolTip("Open or close a scanner connection.");
+    connect(m_connectAction, &QAction::triggered, this, &MainWindow::onConnectButtonClicked);
+    toolbar->addSeparator();
+
+    m_monitorAction = toolbar->addAction(style->standardIcon(QStyle::SP_MediaPlay),
+                                         "Start Monitoring");
+    m_monitorAction->setToolTip("Continuously poll the standard OBD-II PIDs (shown on Live Data).");
+    m_monitorAction->setEnabled(false);
+    connect(m_monitorAction, &QAction::triggered, this, &MainWindow::onMonitorButtonClicked);
+
     auto *tbDtcs = toolbar->addAction(style->standardIcon(QStyle::SP_MessageBoxWarning),
                                       "Read DTCs");
     tbDtcs->setToolTip("Read stored trouble codes (service 03).");
     connect(tbDtcs, &QAction::triggered, this, &MainWindow::onReadStoredClicked);
+    toolbar->addSeparator();
+
     auto *tbExport = toolbar->addAction(style->standardIcon(QStyle::SP_DialogSaveButton),
                                         "Export");
     tbExport->setToolTip("Export a diagnostic report (PDF / CSV / JSON).");
     connect(tbExport, &QAction::triggered, this, &MainWindow::onExportReport);
-    auto *tbEmulator = toolbar->addAction(style->standardIcon(QStyle::SP_ComputerIcon),
-                                          "Emulator");
-    tbEmulator->setToolTip("Open the built-in ELM327 emulator.");
-    connect(tbEmulator, &QAction::triggered, this, &MainWindow::onOpenEmulator);
-    auto *tbPrefs = toolbar->addAction(style->standardIcon(QStyle::SP_FileDialogDetailedView),
-                                       "Preferences");
-    tbPrefs->setToolTip("Theme, units, and live-data settings.");
-    connect(tbPrefs, &QAction::triggered, this, &MainWindow::onPreferences);
+}
+
+void MainWindow::updateMonitorAction(bool running)
+{
+    m_monitorAction->setText(running ? "Stop Monitoring" : "Start Monitoring");
+    m_monitorAction->setIcon(style()->standardIcon(running ? QStyle::SP_MediaStop
+                                                           : QStyle::SP_MediaPlay));
 }
 
 void MainWindow::onPreferences()
@@ -876,12 +882,12 @@ void MainWindow::onConnectButtonClicked()
             m_pidMonitor->stop();
             m_connection->close();
         }
-        m_monitorButton->setText("Start Monitoring");
+        updateMonitorAction(false);
         setConnectedUiState(false);
         m_statusLabel->setText("Disconnected");
         m_statusLabel->setStyleSheet("font-weight: bold; color: #a33;");
         m_testRequestButton->setEnabled(false);
-        m_monitorButton->setEnabled(false);
+        m_monitorAction->setEnabled(false);
         return;
     }
 
@@ -925,16 +931,15 @@ void MainWindow::onConnectButtonClicked()
 
 void MainWindow::setConnectedUiState(bool connected)
 {
-    m_connectButton->setText(connected ? "Disconnect" : "New Connection...");
+    m_connectAction->setText(connected ? "Disconnect" : "Connect...");
 }
 
 void MainWindow::onConnected()
 {
     m_statusLabel->setText("Connected");
     m_statusLabel->setStyleSheet("font-weight: bold; color: #292;");
-    statusBar()->showMessage("Connected");
     m_testRequestButton->setEnabled(true);
-    m_monitorButton->setEnabled(true);
+    m_monitorAction->setEnabled(true);
     m_readVinButton->setEnabled(true);
     m_readCalIdButton->setEnabled(true);
     setDtcButtonsEnabled(true);
@@ -948,13 +953,12 @@ void MainWindow::onDisconnected(const QString &reason)
 {
     m_pidMonitor->stop();
     m_elm->stopMonitoring();
-    m_monitorButton->setText("Start Monitoring");
-    m_monitorButton->setEnabled(false);
+    updateMonitorAction(false);
+    m_monitorAction->setEnabled(false);
     setConnectedUiState(false);
-    m_statusLabel->setText("Disconnected");
+    m_statusLabel->setText(reason.isEmpty() ? QStringLiteral("Disconnected")
+                                            : QString("Disconnected: %1").arg(reason));
     m_statusLabel->setStyleSheet("font-weight: bold; color: #a33;");
-    statusBar()->showMessage(reason.isEmpty() ? QStringLiteral("Disconnected")
-                                              : QString("Disconnected: %1").arg(reason));
     m_testRequestButton->setEnabled(false);
     m_readVinButton->setEnabled(false);
     m_readCalIdButton->setEnabled(false);
@@ -1052,13 +1056,13 @@ void MainWindow::onMonitorButtonClicked()
     if (running) {
         if (m_activeElm) m_elm->stopMonitoring();
         else m_pidMonitor->stop();
-        m_monitorButton->setText("Start Monitoring");
+        updateMonitorAction(false);
         onLogMessage("Stopped live PID monitoring.");
     } else {
         const int interval = AppSettings::pollIntervalMs();
         if (m_activeElm) m_elm->startMonitoring(interval);
         else m_pidMonitor->start(interval);
-        m_monitorButton->setText("Stop Monitoring");
+        updateMonitorAction(true);
         onLogMessage(QString("Started live PID monitoring (%1 ms between requests).").arg(interval));
     }
 }
