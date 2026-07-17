@@ -148,7 +148,6 @@ private:
     QComboBox *m_chartPidCombo;
 
     // Personalization state
-    QAction *m_darkAction = nullptr;
     bool m_imperial = false;            // cached AppSettings::imperialUnits()
     QHash<quint8, QString> m_pidUnit;   // PID -> metric source unit
 

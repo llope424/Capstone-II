@@ -615,8 +615,6 @@ void MainWindow::buildMenus()
     auto *fileMenu = menuBar()->addMenu("&File");
     auto *exportAction = fileMenu->addAction("&Export Report...");
     connect(exportAction, &QAction::triggered, this, &MainWindow::onExportReport);
-    auto *prefsAction = fileMenu->addAction("&Preferences...");
-    connect(prefsAction, &QAction::triggered, this, &MainWindow::onPreferences);
     fileMenu->addSeparator();
     auto *quitAction = fileMenu->addAction("E&xit");
     connect(quitAction, &QAction::triggered, this, &QWidget::close);
@@ -625,12 +623,13 @@ void MainWindow::buildMenus()
     auto *openEmuAction = emulatorMenu->addAction("&Open Emulator...");
     connect(openEmuAction, &QAction::triggered, this, &MainWindow::onOpenEmulator);
 
-    auto *viewMenu = menuBar()->addMenu("&View");
-    m_darkAction = viewMenu->addAction("&Dark Theme");
-    m_darkAction->setCheckable(true);
-    connect(m_darkAction, &QAction::toggled, this, &MainWindow::onToggleTheme);
-    // Restore the saved theme; setChecked fires the toggled handler above.
-    m_darkAction->setChecked(AppSettings::darkTheme());
+    // Top-level Preferences entry (replaces the old View menu, whose only item
+    // - the theme toggle - now lives inside the Preferences dialog).
+    auto *prefsMenuAction = menuBar()->addAction("&Preferences...");
+    connect(prefsMenuAction, &QAction::triggered, this, &MainWindow::onPreferences);
+
+    // Apply the saved theme.
+    onToggleTheme(AppSettings::darkTheme());
 
     // Quick-access toolbar: only the core session actions, in workflow order.
     // Everything else (emulator, preferences, export) stays in the menus.
@@ -676,8 +675,8 @@ void MainWindow::onPreferences()
     if (dialog.exec() != QDialog::Accepted)
         return;
 
-    // Theme (the action's toggled handler applies and persists it).
-    m_darkAction->setChecked(AppSettings::darkTheme());
+    // Theme.
+    onToggleTheme(AppSettings::darkTheme());
 
     // Units: refresh every value display so labels and numbers stay consistent.
     const bool imperial = AppSettings::imperialUnits();
