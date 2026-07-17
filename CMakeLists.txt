@@ -30,6 +30,8 @@ qt_add_executable(ObdSuite
     src/ObdDtcClient.cpp
     src/ObdVehicleInfo.h
     src/ObdVehicleInfo.cpp
+    src/VinDecoder.h
+    src/VinDecoder.cpp
     src/Elm327Connection.h
     src/Elm327Connection.cpp
     src/SessionLogger.h

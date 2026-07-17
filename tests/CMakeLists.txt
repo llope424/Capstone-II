@@ -35,3 +35,14 @@ target_include_directories(ObdSuiteTransportTests PRIVATE ${CMAKE_SOURCE_DIR}/sr
 target_link_libraries(ObdSuiteTransportTests PRIVATE Qt6::Core Qt6::Test Qt6::Network Qt6::SerialPort)
 set_target_properties(ObdSuiteTransportTests PROPERTIES WIN32_EXECUTABLE OFF)
 add_test(NAME ObdSuiteTransportTests COMMAND ObdSuiteTransportTests)
+
+# --- VIN decoder tests (offline decode helpers only, no network round-trip) ---
+qt_add_executable(ObdSuiteVinDecoderTests
+    test_vin_decoder.cpp
+    ${CMAKE_SOURCE_DIR}/src/VinDecoder.h
+    ${CMAKE_SOURCE_DIR}/src/VinDecoder.cpp
+)
+target_include_directories(ObdSuiteVinDecoderTests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(ObdSuiteVinDecoderTests PRIVATE Qt6::Core Qt6::Test Qt6::Network)
+set_target_properties(ObdSuiteVinDecoderTests PROPERTIES WIN32_EXECUTABLE OFF)
+add_test(NAME ObdSuiteVinDecoderTests COMMAND ObdSuiteVinDecoderTests)

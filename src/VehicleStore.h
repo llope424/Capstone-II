@@ -20,6 +20,7 @@ struct VehicleProfile
     QString make;
     QString model;
     QString year;
+    QString trim;
     QString notes;
     QVector<DiagnosticRecord> history;
 };

@@ -10,6 +10,8 @@
 class ObdPidMonitor;
 class ObdDtcClient;
 class ObdVehicleInfo;
+class VinDecoder;
+struct VinDecodeResult;
 class SessionLogger;
 class VehicleStore;
 class Elm327Connection;
@@ -58,6 +60,7 @@ private slots:
     void onReadVinClicked();
     void onReadCalIdsClicked();
     void onVinReceived(const QString &vin);
+    void onVinDecoded(const VinDecodeResult &result);
     void onCalibrationIdsReceived(const QStringList &ids);
     void onCheckFirmwareClicked();
 
@@ -107,6 +110,7 @@ private:
     ObdPidMonitor *m_pidMonitor;
     ObdDtcClient *m_dtcClient;
     ObdVehicleInfo *m_vehicleInfo;
+    VinDecoder *m_vinDecoder;
     SessionLogger *m_logger;
     VehicleStore *m_vehicleStore;
     Elm327Connection *m_elm;   // commercial-adapter backend
@@ -147,6 +151,10 @@ private:
     QLabel *m_protocolValue;
     QLabel *m_calIdValue;
     QLabel *m_firmwareValue;
+    QLabel *m_decodedMakeValue;
+    QLabel *m_decodedModelValue;
+    QLabel *m_decodedYearValue;
+    QLabel *m_decodedTrimValue;
 
     // Vehicles tab
     QListWidget *m_vehicleList;
@@ -180,6 +188,10 @@ private:
     QString m_detectedProtocol;
     QString m_firmwareText;
     QString m_vinText;
+    QString m_decodedMake;
+    QString m_decodedModel;
+    QString m_decodedYear;
+    QString m_decodedTrim;
     QStringList m_calIds;
 
     quint64 m_frameCount = 0;
