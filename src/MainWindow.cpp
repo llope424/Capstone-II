@@ -650,10 +650,11 @@ void MainWindow::buildMenus()
     m_monitorAction->setEnabled(false);
     connect(m_monitorAction, &QAction::triggered, this, &MainWindow::onMonitorButtonClicked);
 
-    auto *tbDtcs = toolbar->addAction(style->standardIcon(QStyle::SP_MessageBoxWarning),
-                                      "Read DTCs");
-    tbDtcs->setToolTip("Read stored trouble codes (service 03).");
-    connect(tbDtcs, &QAction::triggered, this, &MainWindow::onReadStoredClicked);
+    m_readDtcsAction = toolbar->addAction(style->standardIcon(QStyle::SP_MessageBoxWarning),
+                                          "Read DTCs");
+    m_readDtcsAction->setToolTip("Read stored trouble codes (service 03).");
+    m_readDtcsAction->setEnabled(false);
+    connect(m_readDtcsAction, &QAction::triggered, this, &MainWindow::onReadStoredClicked);
     toolbar->addSeparator();
 
     auto *tbExport = toolbar->addAction(style->standardIcon(QStyle::SP_DialogSaveButton),
@@ -887,6 +888,9 @@ void MainWindow::onConnectButtonClicked()
         m_statusLabel->setStyleSheet("font-weight: bold; color: #a33;");
         m_testRequestButton->setEnabled(false);
         m_monitorAction->setEnabled(false);
+        setDtcButtonsEnabled(false);
+        m_readVinButton->setEnabled(false);
+        m_readCalIdButton->setEnabled(false);
         return;
     }
 
@@ -972,6 +976,8 @@ void MainWindow::setDtcButtonsEnabled(bool enabled)
     m_readPendingButton->setEnabled(enabled);
     m_readPermanentButton->setEnabled(enabled);
     m_clearDtcButton->setEnabled(enabled);
+    if (m_readDtcsAction) // toolbar exists only after buildMenus()
+        m_readDtcsAction->setEnabled(enabled);
 }
 
 void MainWindow::onReadStoredClicked()

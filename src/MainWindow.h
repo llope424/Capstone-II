@@ -132,8 +132,9 @@ private:
     QTimer m_flushTimer;
 
     // Quick-access toolbar actions; the status bar carries the labels.
-    QAction *m_connectAction = nullptr; // "Connect..." when idle, "Disconnect" when open
-    QAction *m_monitorAction = nullptr; // Start/Stop Monitoring toggle
+    QAction *m_connectAction = nullptr;  // "Connect..." when idle, "Disconnect" when open
+    QAction *m_monitorAction = nullptr;  // Start/Stop Monitoring toggle
+    QAction *m_readDtcsAction = nullptr; // enabled only while connected
     QLabel *m_statusLabel;
     QLabel *m_deviceInfoLabel;
 
