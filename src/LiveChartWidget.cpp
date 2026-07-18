@@ -36,11 +36,19 @@ void LiveChartWidget::paintEvent(QPaintEvent *)
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing, true);
 
-    const QColor bg(0x24, 0x28, 0x30);
-    const QColor grid(0x3A, 0x3F, 0x4B);
-    const QColor axisText(0x9A, 0xA0, 0xAA);
-    const QColor line(0x4C, 0xA6, 0xFF);
-    const QColor titleColor(0xE8, 0xEA, 0xED);
+    // Style-driven colors: "secondary" background, "details" series line.
+    const QPalette pal = palette();
+    const QColor bg = pal.color(QPalette::Base);
+    const QColor text = pal.color(QPalette::Text);
+    auto blend = [](const QColor &a, const QColor &b, double t) {
+        return QColor(int(a.red() + (b.red() - a.red()) * t),
+                      int(a.green() + (b.green() - a.green()) * t),
+                      int(a.blue() + (b.blue() - a.blue()) * t));
+    };
+    const QColor grid = blend(bg, text, 0.18);
+    const QColor axisText = blend(bg, text, 0.55);
+    const QColor line = pal.color(QPalette::Highlight);
+    const QColor titleColor = text;
 
     p.fillRect(rect(), bg);
 

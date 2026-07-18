@@ -1,5 +1,6 @@
 #include "AppSettings.h"
 
+#include <QHash>
 #include <QSettings>
 #include <QVariant>
 
@@ -14,14 +15,35 @@ constexpr int kDefaultPollMs = 250;
 namespace AppSettings
 {
 
-bool darkTheme()
+QString styleName()
 {
-    return QSettings().value("appearance/darkTheme", false).toBool();
+    QSettings settings;
+    const QString stored = settings.value("appearance/style").toString();
+    if (!stored.isEmpty())
+        return stored;
+    // Migration from the pre-styles boolean theme setting.
+    return settings.value("appearance/darkTheme", false).toBool() ? QStringLiteral("Dark")
+                                                                  : QStringLiteral("Light");
 }
 
-void setDarkTheme(bool dark)
+void setStyleName(const QString &name)
 {
-    QSettings().setValue("appearance/darkTheme", dark);
+    QSettings().setValue("appearance/style", name);
+}
+
+QColor customStyleColor(const QString &role)
+{
+    static const QHash<QString, QString> defaults = {
+        {"main", "#2B2E33"}, {"secondary", "#24272B"}, {"details", "#4CA6FF"}};
+    const QString stored =
+        QSettings().value("appearance/custom_" + role, defaults.value(role)).toString();
+    const QColor color(stored);
+    return color.isValid() ? color : QColor(defaults.value(role));
+}
+
+void setCustomStyleColor(const QString &role, const QColor &color)
+{
+    QSettings().setValue("appearance/custom_" + role, color.name());
 }
 
 bool imperialUnits()

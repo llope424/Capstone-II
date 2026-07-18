@@ -38,6 +38,7 @@
 #include <QToolBar>
 
 #include "AppSettings.h"
+#include "AppStyle.h"
 #include "DashboardConfigDialog.h"
 #include "Elm327Connection.h"
 #include "PreferencesDialog.h"
@@ -628,9 +629,6 @@ void MainWindow::buildMenus()
     auto *prefsMenuAction = menuBar()->addAction("&Preferences...");
     connect(prefsMenuAction, &QAction::triggered, this, &MainWindow::onPreferences);
 
-    // Apply the saved theme.
-    onToggleTheme(AppSettings::darkTheme());
-
     // Quick-access toolbar: only the core session actions, in workflow order.
     // Everything else (emulator, preferences, export) stays in the menus.
     auto *toolbar = addToolBar("Quick Access");
@@ -676,8 +674,8 @@ void MainWindow::onPreferences()
     if (dialog.exec() != QDialog::Accepted)
         return;
 
-    // Theme.
-    onToggleTheme(AppSettings::darkTheme());
+    // Style (may have changed preset or custom colors).
+    AppStyle::apply(AppSettings::styleName());
 
     // Units: refresh every value display so labels and numbers stay consistent.
     const bool imperial = AppSettings::imperialUnits();
@@ -1503,26 +1501,3 @@ void MainWindow::onExportReport()
         QMessageBox::warning(this, "Export failed", "Could not write report: " + error);
 }
 
-void MainWindow::onToggleTheme(bool dark)
-{
-    AppSettings::setDarkTheme(dark);
-    if (dark) {
-        qApp->setStyle(QStyleFactory::create("Fusion"));
-        QPalette p;
-        p.setColor(QPalette::Window, QColor(0x2B, 0x2E, 0x33));
-        p.setColor(QPalette::WindowText, QColor(0xE8, 0xEA, 0xED));
-        p.setColor(QPalette::Base, QColor(0x24, 0x27, 0x2B));
-        p.setColor(QPalette::AlternateBase, QColor(0x2F, 0x33, 0x38));
-        p.setColor(QPalette::Text, QColor(0xE8, 0xEA, 0xED));
-        p.setColor(QPalette::Button, QColor(0x3A, 0x3F, 0x46));
-        p.setColor(QPalette::ButtonText, QColor(0xE8, 0xEA, 0xED));
-        p.setColor(QPalette::Highlight, QColor(0x4C, 0xA6, 0xFF));
-        p.setColor(QPalette::HighlightedText, QColor(0x10, 0x12, 0x14));
-        p.setColor(QPalette::ToolTipBase, QColor(0x2B, 0x2E, 0x33));
-        p.setColor(QPalette::ToolTipText, QColor(0xE8, 0xEA, 0xED));
-        qApp->setPalette(p);
-    } else {
-        qApp->setStyle(QStyleFactory::create("Fusion"));
-        qApp->setPalette(qApp->style()->standardPalette());
-    }
-}

@@ -76,7 +76,6 @@ private slots:
 
     // Report
     void onExportReport();
-    void onToggleTheme(bool dark);
 
     // Personalization
     void onPreferences();

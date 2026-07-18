@@ -1,7 +1,9 @@
 #pragma once
 
 #include <QByteArray>
+#include <QColor>
 #include <QList>
+#include <QString>
 
 // Persistent user preferences, stored via QSettings under the ObdSuite
 // organization/application names set in main(). Every accessor returns the
@@ -9,9 +11,12 @@
 // a fresh install.
 namespace AppSettings
 {
-// Appearance
-bool darkTheme();
-void setDarkTheme(bool dark);
+// Appearance: the active style preset name (see AppStyle::presetNames()) and
+// the three user-chosen colors backing the "Custom" preset.
+QString styleName();
+void setStyleName(const QString &name);
+QColor customStyleColor(const QString &role); // "main" | "secondary" | "details"
+void setCustomStyleColor(const QString &role, const QColor &color);
 
 // Units: false = metric (SAE default), true = imperial (mph / degF / psi).
 bool imperialUnits();

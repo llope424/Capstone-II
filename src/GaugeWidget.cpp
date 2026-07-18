@@ -10,6 +10,13 @@ namespace {
 // (0 = east, counter-clockwise positive); painting converts as needed.
 constexpr double kStartAngle = 225.0;
 constexpr double kSweep = 270.0;
+
+QColor blend(const QColor &a, const QColor &b, double t)
+{
+    return QColor(int(a.red() + (b.red() - a.red()) * t),
+                  int(a.green() + (b.green() - a.green()) * t),
+                  int(a.blue() + (b.blue() - a.blue()) * t));
+}
 }
 
 GaugeWidget::GaugeWidget(const QString &label, const QString &unit,
@@ -38,13 +45,24 @@ void GaugeWidget::paintEvent(QPaintEvent *)
     const double clamped = qBound(m_min, m_hasValue ? m_value : m_min, m_max);
     const double frac = (clamped - m_min) / range;
 
+    // Style-driven colors: the face is the "secondary" (inside-the-dashboard)
+    // color, the needle/value arc the "details" accent; the warn state keeps a
+    // fixed alarm red regardless of theme.
+    const QPalette pal = palette();
+    const QColor faceColor = pal.color(QPalette::Base);
+    const QColor textColor = pal.color(QPalette::Text);
     const bool warning = m_hasWarn && m_hasValue && m_value >= m_warn;
-    const QColor accent = warning ? QColor(0xE0, 0x5A, 0x4B) : QColor(0x4C, 0xA6, 0xFF);
-    const QColor track(0x3A, 0x3F, 0x4B);
-    const QColor textColor(0xE8, 0xEA, 0xED);
-    const QColor mutedColor(0x9A, 0xA0, 0xAA);
+    const QColor accent = warning ? QColor(0xE0, 0x5A, 0x4B) : pal.color(QPalette::Highlight);
+    const QColor track = blend(faceColor, textColor, 0.18);
+    const QColor mutedColor = blend(faceColor, textColor, 0.55);
 
     const QRectF arcRect(center.x() - radius, center.y() - radius, radius * 2, radius * 2);
+
+    // Dial face.
+    const double penWidth = qMax(6.0, radius * 0.14);
+    p.setBrush(faceColor);
+    p.setPen(Qt::NoPen);
+    p.drawEllipse(center, radius + penWidth / 2 + 2, radius + penWidth / 2 + 2);
 
     // Track arc (full sweep).
     QPen trackPen(track, qMax(6.0, radius * 0.14), Qt::SolidLine, Qt::RoundCap);

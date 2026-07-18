@@ -1,6 +1,7 @@
 #include <QApplication>
-#include <QStyleFactory>
 
+#include "AppSettings.h"
+#include "AppStyle.h"
 #include "MainWindow.h"
 
 int main(int argc, char *argv[])
@@ -10,10 +11,9 @@ int main(int argc, char *argv[])
     QApplication::setOrganizationName("ObdSuite");
     QApplication::setApplicationVersion(OBDSUITE_VERSION);
 
-    // Fusion gives a consistent, predictable look across widget states (the
-    // native Windows style renders disabled buttons with near-invisible text on
-    // a dark desktop) and is the same style the dark-theme toggle switches on.
-    QApplication::setStyle(QStyleFactory::create("Fusion"));
+    // Fusion style + the user's saved color preset (AppStyle also selects
+    // Fusion, which renders predictably across widget states and platforms).
+    AppStyle::apply(AppSettings::styleName());
 
     MainWindow window;
     window.show();

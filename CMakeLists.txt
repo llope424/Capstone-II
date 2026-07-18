@@ -49,6 +49,8 @@ qt_add_executable(ObdSuite
     src/CanFrame.h
     src/AppSettings.h
     src/AppSettings.cpp
+    src/AppStyle.h
+    src/AppStyle.cpp
     src/Units.h
     src/Units.cpp
     src/PreferencesDialog.h
