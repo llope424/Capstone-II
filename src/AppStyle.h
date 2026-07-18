@@ -17,6 +17,8 @@ struct StyleColors
     QColor details;
     QColor textOverride;       // invalid = derive text from background luminance
     QColor windowTextOverride; // chrome text only (menu/labels), overrides derivation
+    QColor buttonOverride;     // buttons/tabs; invalid = derived by lightening main
+                               // (which turns saturated reds pink - override to avoid)
 };
 
 namespace AppStyle

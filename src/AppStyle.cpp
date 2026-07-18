@@ -28,7 +28,13 @@ QPalette buildPalette(const StyleColors &c)
                                   ? c.windowTextOverride
                                   : (c.textOverride.isValid() ? c.textOverride : textFor(c.main));
     const QColor baseText = c.textOverride.isValid() ? c.textOverride : textFor(c.secondary);
-    const QColor button = c.main.lightness() > 128 ? c.main.darker(106) : c.main.lighter(135);
+    const QColor button = c.buttonOverride.isValid()
+                              ? c.buttonOverride
+                              : (c.main.lightness() > 128 ? c.main.darker(106)
+                                                          : c.main.lighter(135));
+    const QColor buttonText = c.windowTextOverride.isValid()
+                                  ? c.windowTextOverride
+                                  : (c.textOverride.isValid() ? c.textOverride : textFor(button));
 
     QPalette p;
     p.setColor(QPalette::Window, c.main);
@@ -38,7 +44,7 @@ QPalette buildPalette(const StyleColors &c)
                c.secondary.lightness() > 128 ? c.secondary.darker(104) : c.secondary.lighter(125));
     p.setColor(QPalette::Text, baseText);
     p.setColor(QPalette::Button, button);
-    p.setColor(QPalette::ButtonText, windowText);
+    p.setColor(QPalette::ButtonText, buttonText);
     p.setColor(QPalette::Highlight, c.details);
     p.setColor(QPalette::HighlightedText, textFor(c.details));
     p.setColor(QPalette::ToolTipBase, c.main);
@@ -48,7 +54,7 @@ QPalette buildPalette(const StyleColors &c)
 
     // Disabled state: halfway between text and its background.
     p.setColor(QPalette::Disabled, QPalette::WindowText, blend(c.main, windowText, 0.4));
-    p.setColor(QPalette::Disabled, QPalette::ButtonText, blend(button, windowText, 0.4));
+    p.setColor(QPalette::Disabled, QPalette::ButtonText, blend(button, buttonText, 0.4));
     p.setColor(QPalette::Disabled, QPalette::Text, blend(c.secondary, baseText, 0.4));
     p.setColor(QPalette::Disabled, QPalette::Highlight, blend(c.main, c.details, 0.5));
     return p;
@@ -70,7 +76,12 @@ StyleColors colorsForPreset(const QString &name)
     if (name == QLatin1String("Dark"))
         return {QColor(0x2B, 0x2E, 0x33), QColor(0x24, 0x27, 0x2B), QColor(0x4C, 0xA6, 0xFF)};
     if (name == QLatin1String("Toyota")) // official red/black/white: red chrome, black dials
-        return {QColor(0xEB, 0x0A, 0x1E), QColor(0x14, 0x14, 0x16), QColor(0xFF, 0xFF, 0xFF)};
+        // and black buttons/tabs with white lettering. The button color is
+        // overridden because deriving it by lightening the red reads as pink;
+        // white buttons would break tab labels, which share the chrome text
+        // color (white) and need a dark surface under them.
+        return {QColor(0xEB, 0x0A, 0x1E), QColor(0x14, 0x14, 0x16), QColor(0xFF, 0xFF, 0xFF),
+                QColor(), QColor(), QColor(0x1A, 0x1A, 0x1C)};
     if (name == QLatin1String("Ford")) // official Ford Blue chrome, white dials, Grabber accent
         return {QColor(0x00, 0x09, 0x5B), QColor(0xF4, 0xF8, 0xFD), QColor(0x17, 0x00, 0xF4),
                 QColor(), QColor(0xFF, 0xFF, 0xFF)};
