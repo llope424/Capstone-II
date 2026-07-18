@@ -10,6 +10,7 @@
 
 class ObdPidMonitor;
 class ObdDtcClient;
+class ObdFreezeFrameClient;
 class ObdVehicleInfo;
 class SessionLogger;
 class VehicleStore;
@@ -56,6 +57,11 @@ private slots:
     void onClearDtcsClicked();
     void onDtcsReceived(quint8 mode, const QStringList &codes);
     void onDtcsCleared();
+
+    // Freeze frame (Mode 02)
+    void onReadFreezeFrameClicked();
+    void onFreezeFrameDtc(const QString &code, bool present);
+    void onFreezeFramePid(quint8 pid, double value, bool ok);
 
     // Vehicle info
     void onReadVinClicked();
@@ -127,6 +133,7 @@ private:
     GvretConnection *m_connection;
     ObdPidMonitor *m_pidMonitor;
     ObdDtcClient *m_dtcClient;
+    ObdFreezeFrameClient *m_freezeClient;
     ObdVehicleInfo *m_vehicleInfo;
     SessionLogger *m_logger;
     VehicleStore *m_vehicleStore;
@@ -171,8 +178,12 @@ private:
     QPushButton *m_readStoredButton;
     QPushButton *m_readPendingButton;
     QPushButton *m_readPermanentButton;
+    QPushButton *m_readFreezeButton;
     QPushButton *m_clearDtcButton;
     QTableWidget *m_dtcTable;
+    QLabel *m_freezeInfoLabel;
+    QTableWidget *m_freezeTable;
+    QHash<quint8, int> m_freezePidRow; // PID -> row in m_freezeTable
 
     // Vehicle Info tab
     QPushButton *m_readVinButton;

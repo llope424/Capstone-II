@@ -30,6 +30,7 @@ signals:
 private:
     QByteArray handleObd(const QByteArray &cmd);  // non-AT (OBD) requests
     QByteArray mode01(quint8 pid);                // live data / support masks
+    QByteArray mode02(quint8 pid);                // freeze frame (trigger DTC + snapshot)
     QByteArray dtcResponse(quint8 service, const QStringList &codes); // 03/07/0A
     QByteArray mode09(quint8 pid);                // VIN (02) / calibration IDs (04)
     QByteArray multiFrame(quint8 pid, quint8 nodi, const QByteArray &data) const;

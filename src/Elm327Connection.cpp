@@ -253,9 +253,14 @@ void Elm327Connection::handleResponse(const Command &cmd, const QString &respons
         return;
     }
     if (upper.contains("NO DATA") || upper.contains("STOPPED") || upper.contains("?")) {
-        // No response for this request; for DTC reads that means "no codes".
+        // No response for this request; for DTC reads that means "no codes",
+        // for freeze-frame requests "nothing captured / PID not in the frame".
         if (cmd.kind == Kind::Dtc)
             emit dtcsReceived(cmd.mode, QStringList());
+        else if (cmd.kind == Kind::FreezeDtc)
+            emit freezeFrameDtcReceived(QString(), false);
+        else if (cmd.kind == Kind::FreezePid)
+            emit freezeFramePidReceived(cmd.pid, 0.0, false);
         return;
     }
 
@@ -339,6 +344,43 @@ void Elm327Connection::handleResponse(const Command &cmd, const QString &respons
     }
     case Kind::Clear: {
         emit dtcsCleared();
+        break;
+    }
+    case Kind::FreezeDtc: {
+        // Expect: 42 02 <frame> <dtcHi> <dtcLo>; 00 00 = nothing stored.
+        const int idx = bytes.indexOf(0x42);
+        if (idx < 0 || idx + 4 >= bytes.size()) {
+            emit freezeFrameDtcReceived(QString(), false);
+            break;
+        }
+        const quint8 a = bytes.at(idx + 3), b = bytes.at(idx + 4);
+        if (a == 0 && b == 0)
+            emit freezeFrameDtcReceived(QString(), false);
+        else
+            emit freezeFrameDtcReceived(ObdDtcClient::decodeDtc(a, b), true);
+        break;
+    }
+    case Kind::FreezePid: {
+        // Expect: 42 <pid> <frame> <data...>, data per the Mode 01 encoding.
+        const int idx = bytes.indexOf(0x42);
+        bool decoded = false;
+        if (idx >= 0 && idx + 1 < bytes.size() && bytes.at(idx + 1) == cmd.pid) {
+            for (const PidDefinition &def : m_pids) {
+                if (def.pid != cmd.pid)
+                    continue;
+                const int dataStart = idx + 3;
+                if (dataStart + def.dataBytes <= bytes.size()) {
+                    quint8 buf[8] = {0};
+                    for (int i = 0; i < def.dataBytes && i < 8; ++i)
+                        buf[i] = bytes.at(dataStart + i);
+                    emit freezeFramePidReceived(cmd.pid, def.decode(buf), true);
+                    decoded = true;
+                }
+                break;
+            }
+        }
+        if (!decoded)
+            emit freezeFramePidReceived(cmd.pid, 0.0, false);
         break;
     }
     case Kind::Vin: {
@@ -447,6 +489,24 @@ void Elm327Connection::readPermanentDtcs()
 void Elm327Connection::clearDtcs()
 {
     enqueue({Kind::Clear, "04", 0, 0x04});
+    pumpQueue();
+}
+
+void Elm327Connection::readFreezeFrame()
+{
+    // SAE J1979 Mode 02, frame 00: PID 02 first (the DTC that triggered the
+    // capture; 00 00 = no freeze frame stored), then the standard PIDs, which
+    // reuse the Mode 01 encodings prefixed by the frame-number byte.
+    enqueue({Kind::FreezeDtc, "020200"});
+    for (const PidDefinition &def : m_pids) {
+        Command cmd;
+        cmd.kind = Kind::FreezePid;
+        cmd.text = QByteArray("02")
+                   + QByteArray::number(def.pid, 16).rightJustified(2, '0').toUpper()
+                   + QByteArray("00");
+        cmd.pid = def.pid;
+        enqueue(cmd);
+    }
     pumpQueue();
 }
 

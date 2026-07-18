@@ -28,6 +28,8 @@ qt_add_executable(ObdSuite
     src/ObdPidMonitor.cpp
     src/ObdDtcClient.h
     src/ObdDtcClient.cpp
+    src/ObdFreezeFrameClient.h
+    src/ObdFreezeFrameClient.cpp
     src/ObdVehicleInfo.h
     src/ObdVehicleInfo.cpp
     src/Elm327Connection.h

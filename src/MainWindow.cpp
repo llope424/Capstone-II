@@ -50,6 +50,7 @@
 #include "LiveChartWidget.h"
 #include "NewConnectionDialog.h"
 #include "ObdDtcClient.h"
+#include "ObdFreezeFrameClient.h"
 #include "ObdPidMonitor.h"
 #include "ObdVehicleInfo.h"
 #include "ReportExporter.h"
@@ -112,6 +113,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     connect(m_dtcClient, &ObdDtcClient::dtcsCleared, this, &MainWindow::onDtcsCleared);
     connect(m_dtcClient, &ObdDtcClient::logMessage, this, &MainWindow::onLogMessage);
 
+    m_freezeClient = new ObdFreezeFrameClient(m_connection, this);
+    connect(m_freezeClient, &ObdFreezeFrameClient::freezeFrameDtcReceived,
+            this, &MainWindow::onFreezeFrameDtc);
+    connect(m_freezeClient, &ObdFreezeFrameClient::freezeFramePidReceived,
+            this, &MainWindow::onFreezeFramePid);
+    connect(m_freezeClient, &ObdFreezeFrameClient::logMessage, this, &MainWindow::onLogMessage);
+
     m_vehicleInfo = new ObdVehicleInfo(m_connection, this);
     connect(m_vehicleInfo, &ObdVehicleInfo::vinReceived, this, &MainWindow::onVinReceived);
     connect(m_vehicleInfo, &ObdVehicleInfo::calibrationIdsReceived, this, &MainWindow::onCalibrationIdsReceived);
@@ -133,6 +141,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     connect(m_elm, &Elm327Connection::pidUpdated, this, &MainWindow::onPidUpdated);
     connect(m_elm, &Elm327Connection::dtcsReceived, this, &MainWindow::onDtcsReceived);
     connect(m_elm, &Elm327Connection::dtcsCleared, this, &MainWindow::onDtcsCleared);
+    connect(m_elm, &Elm327Connection::freezeFrameDtcReceived, this, &MainWindow::onFreezeFrameDtc);
+    connect(m_elm, &Elm327Connection::freezeFramePidReceived, this, &MainWindow::onFreezeFramePid);
     connect(m_elm, &Elm327Connection::vinReceived, this, &MainWindow::onVinReceived);
     connect(m_elm, &Elm327Connection::calibrationIdsReceived, this, &MainWindow::onCalibrationIdsReceived);
     connect(m_elm, &Elm327Connection::logMessage, this, &MainWindow::onLogMessage);
@@ -182,18 +192,23 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     m_readStoredButton = new QPushButton("Read Stored");
     m_readPendingButton = new QPushButton("Read Pending");
     m_readPermanentButton = new QPushButton("Read Permanent");
+    m_readFreezeButton = new QPushButton("Read Freeze Frame");
     m_clearDtcButton = new QPushButton("Clear DTCs...");
     m_readStoredButton->setToolTip("Service 03 - confirmed trouble codes (MIL/check-engine codes).");
     m_readPendingButton->setToolTip("Service 07 - pending codes not yet confirmed.");
     m_readPermanentButton->setToolTip("Service 0A - permanent codes that cannot be cleared manually.");
+    m_readFreezeButton->setToolTip("Service 02 - the sensor snapshot the ECU captured at the "
+                                   "moment the first confirmed trouble code set.");
     m_clearDtcButton->setToolTip("Service 04 - clears stored codes and turns off the MIL. Asks for confirmation.");
     connect(m_readStoredButton, &QPushButton::clicked, this, &MainWindow::onReadStoredClicked);
     connect(m_readPendingButton, &QPushButton::clicked, this, &MainWindow::onReadPendingClicked);
     connect(m_readPermanentButton, &QPushButton::clicked, this, &MainWindow::onReadPermanentClicked);
+    connect(m_readFreezeButton, &QPushButton::clicked, this, &MainWindow::onReadFreezeFrameClicked);
     connect(m_clearDtcButton, &QPushButton::clicked, this, &MainWindow::onClearDtcsClicked);
     dtcBar->addWidget(m_readStoredButton);
     dtcBar->addWidget(m_readPendingButton);
     dtcBar->addWidget(m_readPermanentButton);
+    dtcBar->addWidget(m_readFreezeButton);
     dtcBar->addStretch();
     dtcBar->addWidget(m_clearDtcButton);
     dtcLayout->addLayout(dtcBar);
@@ -204,7 +219,18 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     m_dtcTable->verticalHeader()->setVisible(false);
     m_dtcTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_dtcTable->setSelectionBehavior(QAbstractItemView::SelectRows);
-    dtcLayout->addWidget(m_dtcTable, 1);
+    dtcLayout->addWidget(m_dtcTable, 2);
+
+    // Freeze frame (Mode 02): trigger DTC + the captured parameter snapshot.
+    m_freezeInfoLabel = new QLabel("Freeze frame: not read yet.");
+    dtcLayout->addWidget(m_freezeInfoLabel);
+    m_freezeTable = new QTableWidget(0, 3, dtcPage);
+    m_freezeTable->setHorizontalHeaderLabels({"Parameter", "Captured Value", "Unit"});
+    m_freezeTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    m_freezeTable->verticalHeader()->setVisible(false);
+    m_freezeTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_freezeTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    dtcLayout->addWidget(m_freezeTable, 1);
 
     setDtcButtonsEnabled(false);
     tabs->addTab(dtcPage, "Trouble Codes");
@@ -793,6 +819,15 @@ void MainWindow::applyDisplayUnits()
         if (valueItem)
             valueItem->setText("--");
     }
+    // Same treatment for the freeze-frame snapshot table.
+    for (auto it = m_freezePidRow.constBegin(); it != m_freezePidRow.constEnd(); ++it) {
+        QTableWidgetItem *unitItem = m_freezeTable->item(it.value(), 2);
+        if (unitItem)
+            unitItem->setText(Units::displayUnit(m_pidUnit.value(it.key()), m_imperial));
+        QTableWidgetItem *valueItem = m_freezeTable->item(it.value(), 1);
+        if (valueItem)
+            valueItem->setText("--");
+    }
     rebuildGauges();
 }
 
@@ -900,6 +935,17 @@ void MainWindow::buildLiveDataTable()
         m_pidTable->setItem(i, 2, new QTableWidgetItem(Units::displayUnit(def.unit, m_imperial)));
         m_pidRow.insert(def.pid, i);
         m_pidUnit.insert(def.pid, def.unit);
+    }
+
+    // Same parameter list for the freeze-frame snapshot table.
+    m_freezeTable->setRowCount(defs.size());
+    for (int i = 0; i < defs.size(); ++i) {
+        const PidDefinition &def = defs.at(i);
+        m_freezeTable->setItem(i, 0, new QTableWidgetItem(def.name));
+        m_freezeTable->setItem(i, 1, new QTableWidgetItem("--"));
+        m_freezeTable->setItem(i, 2,
+                               new QTableWidgetItem(Units::displayUnit(def.unit, m_imperial)));
+        m_freezePidRow.insert(def.pid, i);
     }
 }
 
@@ -1086,9 +1132,53 @@ void MainWindow::setDtcButtonsEnabled(bool enabled)
     m_readStoredButton->setEnabled(enabled);
     m_readPendingButton->setEnabled(enabled);
     m_readPermanentButton->setEnabled(enabled);
+    m_readFreezeButton->setEnabled(enabled);
     m_clearDtcButton->setEnabled(enabled);
     if (m_readDtcsAction) // toolbar exists only after buildMenus()
         m_readDtcsAction->setEnabled(enabled);
+}
+
+void MainWindow::onReadFreezeFrameClicked()
+{
+    m_freezeInfoLabel->setText("Reading freeze frame...");
+    for (auto it = m_freezePidRow.constBegin(); it != m_freezePidRow.constEnd(); ++it)
+        if (QTableWidgetItem *item = m_freezeTable->item(it.value(), 1))
+            item->setText("--");
+
+    if (m_activeElm)
+        m_elm->readFreezeFrame();
+    else
+        m_freezeClient->read();
+    onLogMessage("Reading freeze frame (service 02)...");
+}
+
+void MainWindow::onFreezeFrameDtc(const QString &code, bool present)
+{
+    if (!present) {
+        m_freezeInfoLabel->setText(
+            "No freeze frame stored (the ECU captures one when a trouble code sets).");
+        onLogMessage("No freeze frame stored.");
+        return;
+    }
+    m_freezeInfoLabel->setText(QString("Freeze frame captured when %1 set - %2")
+                                   .arg(code, ObdDtcClient::describeDtc(code)));
+    onLogMessage("Freeze frame trigger DTC: " + code);
+}
+
+void MainWindow::onFreezeFramePid(quint8 pid, double value, bool ok)
+{
+    const auto it = m_freezePidRow.constFind(pid);
+    if (it == m_freezePidRow.constEnd())
+        return;
+    QTableWidgetItem *item = m_freezeTable->item(it.value(), 1);
+    if (!item)
+        return;
+    if (!ok) {
+        item->setText("n/a");
+        return;
+    }
+    const double shown = Units::display(value, m_pidUnit.value(pid), m_imperial);
+    item->setText(QString::number(shown, 'f', 1));
 }
 
 void MainWindow::onReadStoredClicked()

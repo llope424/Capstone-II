@@ -47,6 +47,7 @@ public:
     void readPendingDtcs();
     void readPermanentDtcs();
     void clearDtcs();
+    void readFreezeFrame(); // Mode 02: trigger DTC + captured PID snapshot
     void readVin();
     void readCalibrationIds();
 
@@ -57,6 +58,8 @@ signals:
     void pidUpdated(quint8 pid, double value);
     void dtcsReceived(quint8 mode, const QStringList &codes);
     void dtcsCleared();
+    void freezeFrameDtcReceived(const QString &code, bool present);
+    void freezeFramePidReceived(quint8 pid, double value, bool ok);
     void vinReceived(const QString &vin);
     void calibrationIdsReceived(const QStringList &ids);
     void deviceInfoReceived(const QString &adapterId);
@@ -70,7 +73,7 @@ private slots:
 
 private:
     // One queued ELM327 request and how to handle its reply.
-    enum class Kind { Init, TestPid, Pid, Dtc, Vin, CalId, Clear };
+    enum class Kind { Init, TestPid, Pid, Dtc, Vin, CalId, Clear, FreezeDtc, FreezePid };
     struct Command
     {
         Kind kind;

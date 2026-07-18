@@ -119,6 +119,11 @@ QByteArray Elm327EmulatorEngine::handleObd(const QByteArray &cmd)
         const quint8 pid = quint8(cmd.mid(2, 2).toInt(&ok, 16));
         if (ok)
             return mode01(pid);
+    } else if (cmd.startsWith("02") && cmd.size() >= 4) {
+        bool ok = false;
+        const quint8 pid = quint8(cmd.mid(2, 2).toInt(&ok, 16));
+        if (ok)
+            return mode02(pid);
     } else if (cmd.startsWith("03")) {
         return dtcResponse(0x43, m_model ? m_model->storedDtcs() : QStringList());
     } else if (cmd.startsWith("07")) {
@@ -143,6 +148,33 @@ QByteArray Elm327EmulatorEngine::handleObd(const QByteArray &cmd)
     if (!cmd.isEmpty() && hexOnly.match(QString::fromLatin1(cmd)).hasMatch())
         return "NO DATA";
     return "?";
+}
+
+QByteArray Elm327EmulatorEngine::mode02(quint8 pid)
+{
+    // SAE J1979 Mode 02 (freeze frame, frame 00). PID 02 carries the DTC that
+    // triggered the capture (00 00 = nothing stored); data PIDs reuse the
+    // Mode 01 raw encodings with the frame-number byte inserted. The frame is
+    // "captured" when the scenario has a stored DTC, and the snapshot simply
+    // reflects the model's current PID values.
+    const QStringList stored = m_model ? m_model->storedDtcs() : QStringList();
+
+    QByteArray head;
+    head += char(0x42);
+    head += char(pid);
+    head += char(0x00); // frame number
+
+    if (pid == 0x02) {
+        const QByteArray dtc =
+            stored.isEmpty() ? QByteArray(2, char(0x00)) : encodeDtc(stored.first());
+        return formatBytes(head + dtc);
+    }
+    if (stored.isEmpty())
+        return "NO DATA"; // no freeze frame captured
+    const QByteArray raw = m_model ? m_model->pidRaw(pid) : QByteArray();
+    if (raw.isEmpty())
+        return "NO DATA"; // PID not part of the captured frame
+    return formatBytes(head + raw);
 }
 
 QByteArray Elm327EmulatorEngine::mode09(quint8 pid)

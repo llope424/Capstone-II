@@ -29,6 +29,7 @@ private slots:
     void mode03Stored();
     void mode07And0A();
     void mode04Clear();
+    void mode02FreezeFrame();
 
     // A4 — Mode 09 VIN / Calibration IDs (multi-frame)
     void mode09Vin();
@@ -362,6 +363,31 @@ void TestEmulatorEngine::scenariosLoadAndSwitch()
 
     model.setActiveScenario("Healthy (default)");
     QCOMPARE(engine.handleLine("03"), QByteArray("43 00\r\r>")); // no DTCs
+}
+
+// Mode 02 freeze frame: PID 02 reports the trigger DTC (00 00 when nothing is
+// stored); data PIDs mirror the Mode 01 raw encodings with a frame-number
+// byte, and answer NO DATA when no frame was captured.
+void TestEmulatorEngine::mode02FreezeFrame()
+{
+    ObdMessageModel model;
+    Elm327EmulatorEngine engine(&model);
+
+    // No stored DTC: no freeze frame.
+    QCOMPARE(appHexParse(engine.handleLine("020200")),
+             QByteArray("\x42\x02\x00\x00\x00", 5));
+    QVERIFY(engine.handleLine("020C00").contains("NO DATA"));
+
+    // With a misfire stored, the trigger DTC and the captured RPM come back.
+    model.setStoredDtcs({"P0301"});
+    model.setPidRaw(0x0C, QByteArray("\x32\x00", 2)); // 3200 rpm
+    QCOMPARE(appHexParse(engine.handleLine("020200")),
+             QByteArray("\x42\x02\x00\x03\x01", 5));
+    QCOMPARE(appHexParse(engine.handleLine("020C00")),
+             QByteArray("\x42\x0C\x00\x32\x00", 5));
+
+    // A PID the model has no value for is not part of the frame.
+    QVERIFY(engine.handleLine("020D00").contains("NO DATA"));
 }
 
 QTEST_MAIN(TestEmulatorEngine)
