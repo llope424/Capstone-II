@@ -2,6 +2,7 @@
 
 #include <QHash>
 #include <QMainWindow>
+#include <QSet>
 #include <QTimer>
 #include <QVector>
 
@@ -109,6 +110,13 @@ private:
     void buildDashboardTab(QTabWidget *tabs);
     void rebuildGauges();
     void applyDisplayUnits();
+
+    // Supported-PID detection (Mode 01 masks 00/20/40, queried on connect).
+    void resetPidSupport();
+    void handleSupportMask(quint8 basePid, const quint8 *mask);
+    void updatePidSupportUi();
+    bool isPidKnownUnsupported(quint8 pid) const;
+    void markPidRowUnsupported(quint8 pid, bool unsupported);
     void buildVehicleTab(QTabWidget *tabs);
     QWidget *buildVehicleInfoPane();
     QWidget *buildVehiclesPane();
@@ -151,6 +159,12 @@ private:
     // Personalization state
     bool m_imperial = false;            // cached AppSettings::imperialUnits()
     QHash<quint8, QString> m_pidUnit;   // PID -> metric source unit
+
+    // What the connected vehicle reports it implements. A PID counts as
+    // unsupported only once the bitmask covering its range has arrived.
+    QSet<quint8> m_supportedPids;
+    quint8 m_supportMasksSeen = 0;      // bit n = mask for base 0x20*n received
+    QSet<quint8> m_knownUnsupported;    // currently marked n/a in the UI
 
     // Trouble Codes tab
     QPushButton *m_readStoredButton;

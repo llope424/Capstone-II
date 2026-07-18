@@ -748,6 +748,9 @@ void MainWindow::rebuildGauges()
         }
         if (!cfg)
             continue;
+        // Hide gauges the connected vehicle says it will never answer.
+        if (isPidKnownUnsupported(cfg->pid))
+            continue;
 
         QString name, unit;
         for (const PidDefinition &def : defs) {
@@ -797,6 +800,82 @@ void MainWindow::closeEvent(QCloseEvent *event)
 {
     AppSettings::setWindowGeometry(saveGeometry());
     QMainWindow::closeEvent(event);
+}
+
+void MainWindow::handleSupportMask(quint8 basePid, const quint8 *mask)
+{
+    m_supportMasksSeen |= quint8(1 << (basePid / 0x20));
+    // Byte A bit 7 = basePid+1 ... byte D bit 0 = basePid+32 (SAE J1979).
+    // Masks from several ECUs are OR'd together: supported anywhere counts.
+    for (int byte = 0; byte < 4; ++byte)
+        for (int bit = 0; bit < 8; ++bit)
+            if (mask[byte] & (0x80 >> bit))
+                m_supportedPids.insert(quint8(basePid + byte * 8 + bit + 1));
+    updatePidSupportUi();
+}
+
+bool MainWindow::isPidKnownUnsupported(quint8 pid) const
+{
+    const quint8 base = quint8(((pid - 1) / 0x20) * 0x20);
+    if (!(m_supportMasksSeen & (1 << (base / 0x20))))
+        return false; // that range's mask hasn't arrived; assume supported
+    return !m_supportedPids.contains(pid);
+}
+
+void MainWindow::markPidRowUnsupported(quint8 pid, bool unsupported)
+{
+    const auto it = m_pidRow.constFind(pid);
+    if (it == m_pidRow.constEnd())
+        return;
+    for (int col = 0; col < 3; ++col) {
+        QTableWidgetItem *item = m_pidTable->item(it.value(), col);
+        if (!item)
+            continue;
+        item->setForeground(unsupported ? QBrush(Qt::gray) : QBrush());
+        item->setToolTip(unsupported
+                             ? QStringLiteral("Not supported by this vehicle (per the "
+                                              "Mode 01 supported-PID bitmask).")
+                             : QString());
+    }
+    if (QTableWidgetItem *value = m_pidTable->item(it.value(), 1))
+        value->setText(unsupported ? QStringLiteral("n/a") : QStringLiteral("--"));
+}
+
+void MainWindow::updatePidSupportUi()
+{
+    QSet<quint8> unsupported;
+    const QVector<PidDefinition> &defs = m_pidMonitor->definitions();
+    for (const PidDefinition &def : defs)
+        if (isPidKnownUnsupported(def.pid))
+            unsupported.insert(def.pid);
+    if (unsupported == m_knownUnsupported)
+        return;
+
+    QStringList names;
+    for (const PidDefinition &def : defs) {
+        const bool now = unsupported.contains(def.pid);
+        if (now != m_knownUnsupported.contains(def.pid))
+            markPidRowUnsupported(def.pid, now);
+        if (now)
+            names << def.name;
+    }
+    m_knownUnsupported = unsupported;
+    rebuildGauges();
+    if (!names.isEmpty())
+        onLogMessage(QString("Vehicle does not support: %1 (marked n/a; gauges hidden).")
+                         .arg(names.join(", ")));
+}
+
+void MainWindow::resetPidSupport()
+{
+    m_supportedPids.clear();
+    m_supportMasksSeen = 0;
+    if (m_knownUnsupported.isEmpty())
+        return;
+    for (quint8 pid : m_knownUnsupported)
+        markPidRowUnsupported(pid, false);
+    m_knownUnsupported.clear();
+    rebuildGauges();
 }
 
 void MainWindow::onOpenEmulator()
@@ -891,6 +970,7 @@ void MainWindow::onConnectButtonClicked()
         setDtcButtonsEnabled(false);
         m_readVinButton->setEnabled(false);
         m_readCalIdButton->setEnabled(false);
+        resetPidSupport();
         return;
     }
 
@@ -950,6 +1030,28 @@ void MainWindow::onConnected()
     // We connect over ISO 15765-4 CAN at the detected bus speed.
     m_detectedProtocol = "ISO 15765-4 (CAN)";
     m_protocolValue->setText(m_detectedProtocol);
+
+    // Ask which Mode 01 PIDs this vehicle implements (masks 00/20/40) so the
+    // UI can mark parameters the car will never answer. Replies are picked up
+    // in onFrameReceived().
+    resetPidSupport();
+    if (m_activeElm) {
+        m_elm->queryPidSupport();
+    } else {
+        for (int i = 0; i < 3; ++i) {
+            QTimer::singleShot(200 * i, this, [this, i]() {
+                if (!m_connection->isOpen())
+                    return;
+                QByteArray payload;
+                payload.append(char(0x02));
+                payload.append(char(0x01));
+                payload.append(char(i * 0x20));
+                while (payload.size() < 8)
+                    payload.append(char(0x00));
+                m_connection->sendFrame(0x7DF, false, 0, payload);
+            });
+        }
+    }
 }
 
 void MainWindow::onDisconnected(const QString &reason)
@@ -966,6 +1068,7 @@ void MainWindow::onDisconnected(const QString &reason)
     m_readVinButton->setEnabled(false);
     m_readCalIdButton->setEnabled(false);
     setDtcButtonsEnabled(false);
+    resetPidSupport();
     if (!reason.isEmpty())
         onLogMessage("Disconnected: " + reason);
 }
@@ -1116,6 +1219,20 @@ void MainWindow::onSendTestRequestClicked()
 
 void MainWindow::onFrameReceived(const CanFrame &frame)
 {
+    // Sniff supported-PID bitmask replies (41 00/20/40 + 4 mask bytes) from an
+    // OBD response ID. GVRET frames carry the ISO-TP PCI byte first; ELM327
+    // synthesized frames start directly at the service byte.
+    if (frame.id >= 0x7E8 && frame.id <= 0x7EF) {
+        for (int j = 0; j <= 1; ++j) {
+            if (j + 6 <= frame.length && frame.data[j] == 0x41
+                && (frame.data[j + 1] == 0x00 || frame.data[j + 1] == 0x20
+                    || frame.data[j + 1] == 0x40)) {
+                handleSupportMask(frame.data[j + 1], &frame.data[j + 2]);
+                break;
+            }
+        }
+    }
+
     // Persist to the active recording (if any) before buffering for display.
     m_logger->recordFrame(frame);
 

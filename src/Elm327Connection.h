@@ -42,6 +42,7 @@ public:
     bool isMonitoring() const { return m_monitorTimer.isActive(); }
 
     void sendTestRequest();
+    void queryPidSupport();
     void readStoredDtcs();
     void readPendingDtcs();
     void readPermanentDtcs();

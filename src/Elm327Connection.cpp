@@ -450,6 +450,17 @@ void Elm327Connection::clearDtcs()
     pumpQueue();
 }
 
+void Elm327Connection::queryPidSupport()
+{
+    // Mode 01 PIDs 00/20/40: bitmasks of which live-data PIDs the vehicle
+    // implements. Responses reach the UI as synthesized frames; no PID
+    // definition matches them, so no pidUpdated is emitted.
+    enqueue({Kind::Pid, "0100"});
+    enqueue({Kind::Pid, "0120"});
+    enqueue({Kind::Pid, "0140"});
+    pumpQueue();
+}
+
 void Elm327Connection::readVin()
 {
     enqueue({Kind::Vin, "0902"});
