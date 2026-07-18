@@ -66,6 +66,10 @@ PreferencesDialog::PreferencesDialog(QWidget *parent) : QDialog(parent)
     m_mainColor = AppSettings::customStyleColor("main");
     m_secondaryColor = AppSettings::customStyleColor("secondary");
     m_detailsColor = AppSettings::customStyleColor("details");
+    m_origStyle = AppSettings::styleName();
+    m_origMain = m_mainColor;
+    m_origSecondary = m_secondaryColor;
+    m_origDetails = m_detailsColor;
 
     m_mainButton = new QPushButton(this);
     m_mainButton->setToolTip("Window chrome - the area outside the dashboard.");
@@ -92,9 +96,14 @@ PreferencesDialog::PreferencesDialog(QWidget *parent) : QDialog(parent)
     tabs->addTab(stylePage, "Style");
     outer->addWidget(tabs);
 
-    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+    auto *buttons = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::Apply, this);
+    buttons->button(QDialogButtonBox::Apply)
+        ->setToolTip("Preview the selected style without closing this window.");
     connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+    connect(buttons->button(QDialogButtonBox::Apply), &QPushButton::clicked, this,
+            &PreferencesDialog::applyStyleNow);
     outer->addWidget(buttons);
 
     const auto syncCustomEnabled = [this]() {
@@ -127,6 +136,17 @@ void PreferencesDialog::pickColor(QColor *target)
     refreshSwatches();
 }
 
+void PreferencesDialog::applyStyleNow()
+{
+    // Persist the style pieces and restyle the app live; General-tab settings
+    // wait for OK. Cancel restores the snapshot taken at dialog open.
+    AppSettings::setStyleName(m_styleCombo->currentText());
+    AppSettings::setCustomStyleColor("main", m_mainColor);
+    AppSettings::setCustomStyleColor("secondary", m_secondaryColor);
+    AppSettings::setCustomStyleColor("details", m_detailsColor);
+    AppStyle::apply(AppSettings::styleName());
+}
+
 void PreferencesDialog::accept()
 {
     AppSettings::setImperialUnits(m_unitsCombo->currentData().toBool());
@@ -136,4 +156,15 @@ void PreferencesDialog::accept()
     AppSettings::setCustomStyleColor("secondary", m_secondaryColor);
     AppSettings::setCustomStyleColor("details", m_detailsColor);
     QDialog::accept();
+}
+
+void PreferencesDialog::reject()
+{
+    // Undo a live preview: put the stored style back exactly as it was.
+    AppSettings::setStyleName(m_origStyle);
+    AppSettings::setCustomStyleColor("main", m_origMain);
+    AppSettings::setCustomStyleColor("secondary", m_origSecondary);
+    AppSettings::setCustomStyleColor("details", m_origDetails);
+    AppStyle::apply(m_origStyle);
+    QDialog::reject();
 }

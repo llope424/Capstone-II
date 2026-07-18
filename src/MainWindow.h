@@ -105,6 +105,7 @@ protected:
 private:
     void setConnectedUiState(bool connected);
     void updateMonitorAction(bool running);
+    void setStatus(const QString &text, char kind); // 'r'ed / 'g'reen / 'y'ellow
     void buildLiveDataTable();
     void buildDashboardTab(QTabWidget *tabs);
     void rebuildGauges();
@@ -143,6 +144,7 @@ private:
     QAction *m_monitorAction = nullptr;  // Start/Stop Monitoring toggle
     QAction *m_readDtcsAction = nullptr; // enabled only while connected
     QLabel *m_statusLabel;
+    char m_statusKind = 'r'; // current setStatus() kind, for restyling on theme change
     QLabel *m_deviceInfoLabel;
 
     // Live Data tab

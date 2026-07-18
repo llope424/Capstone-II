@@ -15,7 +15,8 @@ struct StyleColors
     QColor main;
     QColor secondary;
     QColor details;
-    QColor textOverride; // invalid = derive text from background luminance
+    QColor textOverride;       // invalid = derive text from background luminance
+    QColor windowTextOverride; // chrome text only (menu/labels), overrides derivation
 };
 
 namespace AppStyle

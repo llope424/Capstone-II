@@ -21,10 +21,12 @@ public:
     explicit PreferencesDialog(QWidget *parent = nullptr);
 
     void accept() override;
+    void reject() override; // reverts any live-previewed (Apply) style
 
 private:
     void refreshSwatches();
     void pickColor(QColor *target);
+    void applyStyleNow(); // Apply button: preview the style without closing
 
     QComboBox *m_unitsCombo;
     QComboBox *m_pollCombo;
@@ -36,4 +38,10 @@ private:
     QColor m_mainColor;
     QColor m_secondaryColor;
     QColor m_detailsColor;
+
+    // Snapshot at dialog-open time so Cancel can undo an Apply preview.
+    QString m_origStyle;
+    QColor m_origMain;
+    QColor m_origSecondary;
+    QColor m_origDetails;
 };

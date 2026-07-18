@@ -151,8 +151,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
     // Connection state and adapter info live in the status bar; connecting is a
     // toolbar action. No dedicated bars above the tabs.
-    m_statusLabel = new QLabel("Disconnected");
-    m_statusLabel->setStyleSheet("font-weight: bold; color: #a33;");
+    m_statusLabel = new QLabel();
+    setStatus("Disconnected", 'r');
     m_deviceInfoLabel = new QLabel("No device info yet.");
 
     auto *tabs = new QTabWidget(central);
@@ -674,8 +674,10 @@ void MainWindow::onPreferences()
     if (dialog.exec() != QDialog::Accepted)
         return;
 
-    // Style (may have changed preset or custom colors).
+    // Style (may have changed preset or custom colors); restyle the status
+    // label so its state color matches the new chrome.
     AppStyle::apply(AppSettings::styleName());
+    setStatus(m_statusLabel->text(), m_statusKind);
 
     // Units: refresh every value display so labels and numbers stay consistent.
     const bool imperial = AppSettings::imperialUnits();
@@ -961,8 +963,7 @@ void MainWindow::onConnectButtonClicked()
         }
         updateMonitorAction(false);
         setConnectedUiState(false);
-        m_statusLabel->setText("Disconnected");
-        m_statusLabel->setStyleSheet("font-weight: bold; color: #a33;");
+        setStatus("Disconnected", 'r');
         m_testRequestButton->setEnabled(false);
         m_monitorAction->setEnabled(false);
         setDtcButtonsEnabled(false);
@@ -976,21 +977,18 @@ void MainWindow::onConnectButtonClicked()
     if (!NewConnectionDialog::getConnectionParams(this, params))
         return; // user cancelled
 
-    m_statusLabel->setText("Connecting...");
-    m_statusLabel->setStyleSheet("font-weight: bold; color: #b80;");
+    setStatus("Connecting...", 'y');
     m_deviceInfoLabel->setText("No device info yet.");
 
     const bool serial = params.transport == ConnectionParams::Transport::Serial;
     if (serial && params.serialPort.isEmpty()) {
         onLogMessage("No serial port selected.");
-        m_statusLabel->setText("Disconnected");
-        m_statusLabel->setStyleSheet("font-weight: bold; color: #a33;");
+        setStatus("Disconnected", 'r');
         return;
     }
     if (!serial && params.host.isEmpty()) {
         onLogMessage("No host/IP entered.");
-        m_statusLabel->setText("Disconnected");
-        m_statusLabel->setStyleSheet("font-weight: bold; color: #a33;");
+        setStatus("Disconnected", 'r');
         return;
     }
 
@@ -1015,10 +1013,22 @@ void MainWindow::setConnectedUiState(bool connected)
     m_connectAction->setText(connected ? "Disconnect" : "Connect...");
 }
 
+void MainWindow::setStatus(const QString &text, char kind)
+{
+    m_statusKind = kind;
+    m_statusLabel->setText(text);
+    // Pick light or dark variants so the state color never blends into the
+    // active style's chrome (e.g. dark red on Toyota red, dark green on blue).
+    const bool darkBg = palette().color(QPalette::Window).lightness() < 128;
+    const char *color = kind == 'g' ? (darkBg ? "#5BD75B" : "#1E7A1E")
+                        : kind == 'y' ? (darkBg ? "#E6C34A" : "#9A7B00")
+                                      : (darkBg ? "#F26D6D" : "#A33333");
+    m_statusLabel->setStyleSheet(QString("font-weight: bold; color: %1;").arg(color));
+}
+
 void MainWindow::onConnected()
 {
-    m_statusLabel->setText("Connected");
-    m_statusLabel->setStyleSheet("font-weight: bold; color: #292;");
+    setStatus("Connected", 'g');
     m_testRequestButton->setEnabled(true);
     m_monitorAction->setEnabled(true);
     m_readVinButton->setEnabled(true);
@@ -1059,9 +1069,9 @@ void MainWindow::onDisconnected(const QString &reason)
     updateMonitorAction(false);
     m_monitorAction->setEnabled(false);
     setConnectedUiState(false);
-    m_statusLabel->setText(reason.isEmpty() ? QStringLiteral("Disconnected")
-                                            : QString("Disconnected: %1").arg(reason));
-    m_statusLabel->setStyleSheet("font-weight: bold; color: #a33;");
+    setStatus(reason.isEmpty() ? QStringLiteral("Disconnected")
+                               : QString("Disconnected: %1").arg(reason),
+              'r');
     m_testRequestButton->setEnabled(false);
     m_readVinButton->setEnabled(false);
     m_readCalIdButton->setEnabled(false);
