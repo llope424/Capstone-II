@@ -4,7 +4,10 @@
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
+#include <QIcon>
 #include <QLabel>
+#include <QPainter>
+#include <QPixmap>
 #include <QPushButton>
 #include <QTabWidget>
 #include <QVBoxLayout>
@@ -18,6 +21,19 @@ QString swatchStyle(const QColor &c)
     const QString textColor = c.lightness() > 128 ? "#1C1C1E" : "#E8EAED";
     return QString("background-color: %1; color: %2; border: 1px solid #888; padding: 4px;")
         .arg(c.name(), textColor);
+}
+
+// Mini palette chip (main | secondary | details) shown beside preset names.
+QIcon presetIcon(const StyleColors &c)
+{
+    QPixmap pm(42, 14);
+    QPainter p(&pm);
+    p.fillRect(0, 0, 14, 14, c.main);
+    p.fillRect(14, 0, 14, 14, c.secondary);
+    p.fillRect(28, 0, 14, 14, c.details);
+    p.setPen(QColor(0x88, 0x88, 0x88));
+    p.drawRect(0, 0, 41, 13);
+    return QIcon(pm);
 }
 }
 
@@ -58,7 +74,9 @@ PreferencesDialog::PreferencesDialog(QWidget *parent) : QDialog(parent)
     auto *styleForm = new QFormLayout(stylePage);
 
     m_styleCombo = new QComboBox(this);
-    m_styleCombo->addItems(AppStyle::presetNames());
+    const QStringList presets = AppStyle::presetNames();
+    for (const QString &name : presets)
+        m_styleCombo->addItem(presetIcon(AppStyle::colorsForPreset(name)), name);
     const int styleIdx = m_styleCombo->findText(AppSettings::styleName());
     m_styleCombo->setCurrentIndex(styleIdx >= 0 ? styleIdx : 0);
     styleForm->addRow("Preset:", m_styleCombo);
@@ -89,7 +107,9 @@ PreferencesDialog::PreferencesDialog(QWidget *parent) : QDialog(parent)
     connect(m_detailsButton, &QPushButton::clicked, this, [this]() { pickColor(&m_detailsColor); });
     styleForm->addRow("Details color:", m_detailsButton);
 
-    auto *hint = new QLabel("Custom colors apply when the preset is \"Custom\".");
+    auto *hint = new QLabel("Changes preview instantly on the whole app. Editing a color "
+                            "starts a Custom style from the selected preset. Cancel "
+                            "restores your previous style.");
     hint->setWordWrap(true);
     styleForm->addRow(hint);
 
@@ -98,42 +118,81 @@ PreferencesDialog::PreferencesDialog(QWidget *parent) : QDialog(parent)
 
     auto *buttons = new QDialogButtonBox(
         QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::Apply, this);
-    buttons->button(QDialogButtonBox::Apply)
-        ->setToolTip("Preview the selected style without closing this window.");
+    buttons->button(QDialogButtonBox::Apply)->setToolTip("Re-apply the selected style now.");
     connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     connect(buttons->button(QDialogButtonBox::Apply), &QPushButton::clicked, this,
             &PreferencesDialog::applyStyleNow);
     outer->addWidget(buttons);
 
-    const auto syncCustomEnabled = [this]() {
-        const bool custom = m_styleCombo->currentText() == QLatin1String("Custom");
-        m_mainButton->setEnabled(custom);
-        m_secondaryButton->setEnabled(custom);
-        m_detailsButton->setEnabled(custom);
-    };
-    connect(m_styleCombo, &QComboBox::currentTextChanged, this, syncCustomEnabled);
-    syncCustomEnabled();
+    connect(m_styleCombo, &QComboBox::currentTextChanged, this,
+            [this]() { onPresetChanged(); });
+
+    m_updating = false;
     refreshSwatches();
+}
+
+bool PreferencesDialog::isCustom() const
+{
+    return m_styleCombo->currentText() == QLatin1String("Custom");
+}
+
+void PreferencesDialog::onPresetChanged()
+{
+    if (m_updating)
+        return;
+    refreshSwatches();
+    applyStyleNow();
 }
 
 void PreferencesDialog::refreshSwatches()
 {
-    m_mainButton->setText(m_mainColor.name().toUpper());
-    m_mainButton->setStyleSheet(swatchStyle(m_mainColor));
-    m_secondaryButton->setText(m_secondaryColor.name().toUpper());
-    m_secondaryButton->setStyleSheet(swatchStyle(m_secondaryColor));
-    m_detailsButton->setText(m_detailsColor.name().toUpper());
-    m_detailsButton->setStyleSheet(swatchStyle(m_detailsColor));
+    // The buttons always show the colors currently on screen: the selected
+    // preset's triple, or the custom colors when Custom is active.
+    StyleColors eff;
+    if (isCustom())
+        eff = {m_mainColor, m_secondaryColor, m_detailsColor};
+    else
+        eff = AppStyle::colorsForPreset(m_styleCombo->currentText());
+
+    m_mainButton->setText(eff.main.name().toUpper());
+    m_mainButton->setStyleSheet(swatchStyle(eff.main));
+    m_secondaryButton->setText(eff.secondary.name().toUpper());
+    m_secondaryButton->setStyleSheet(swatchStyle(eff.secondary));
+    m_detailsButton->setText(eff.details.name().toUpper());
+    m_detailsButton->setStyleSheet(swatchStyle(eff.details));
+}
+
+void PreferencesDialog::refreshCustomIcon()
+{
+    const int idx = m_styleCombo->findText(QStringLiteral("Custom"));
+    if (idx >= 0)
+        m_styleCombo->setItemIcon(idx,
+                                  presetIcon({m_mainColor, m_secondaryColor, m_detailsColor}));
 }
 
 void PreferencesDialog::pickColor(QColor *target)
 {
+    // Editing a preset's color forks it into Custom: seed all three custom
+    // colors from the preset so only the picked one changes on screen.
+    if (!isCustom()) {
+        const StyleColors seed = AppStyle::colorsForPreset(m_styleCombo->currentText());
+        m_mainColor = seed.main;
+        m_secondaryColor = seed.secondary;
+        m_detailsColor = seed.details;
+    }
+
     const QColor chosen = QColorDialog::getColor(*target, this, "Choose color");
     if (!chosen.isValid())
         return;
     *target = chosen;
+
+    m_updating = true;
+    m_styleCombo->setCurrentText(QStringLiteral("Custom"));
+    m_updating = false;
+    refreshCustomIcon();
     refreshSwatches();
+    applyStyleNow();
 }
 
 void PreferencesDialog::applyStyleNow()
@@ -160,7 +219,7 @@ void PreferencesDialog::accept()
 
 void PreferencesDialog::reject()
 {
-    // Undo a live preview: put the stored style back exactly as it was.
+    // Undo any live preview: put the stored style back exactly as it was.
     AppSettings::setStyleName(m_origStyle);
     AppSettings::setCustomStyleColor("main", m_origMain);
     AppSettings::setCustomStyleColor("secondary", m_origSecondary);
