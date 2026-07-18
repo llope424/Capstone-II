@@ -76,8 +76,8 @@ StyleColors colorsForPreset(const QString &name)
                 QColor(), QColor(0xFF, 0xFF, 0xFF)};
     if (name == QLatin1String("BMW")) // roundel white/black/blue: white chrome, black dials
         return {QColor(0xF5, 0xF6, 0xF8), QColor(0x10, 0x12, 0x14), QColor(0x00, 0x66, 0xB1)};
-    if (name == QLatin1String("Ferrari")) // Rosso Corsa chrome, black dials, Ferrari-yellow details
-        return {QColor(0xD4, 0x00, 0x00), QColor(0x1A, 0x1A, 0x1A), QColor(0xFF, 0xCC, 0x00)};
+    if (name == QLatin1String("Ferrari")) // Rosso Corsa chrome, tricolore-green dials, yellow details
+        return {QColor(0xD4, 0x00, 0x00), QColor(0x0F, 0x35, 0x21), QColor(0xFF, 0xCC, 0x00)};
     if (name == QLatin1String("Lamborghini")) // official black and gold
         return {QColor(0x00, 0x00, 0x00), QColor(0x16, 0x14, 0x0F), QColor(0xFE, 0xD2, 0x60)};
     if (name == QLatin1String("Dodge")) // muscle black with Dodge-red details
