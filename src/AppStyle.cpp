@@ -61,7 +61,8 @@ namespace AppStyle
 
 QStringList presetNames()
 {
-    return {"Light", "Dark", "Toyota", "Ford", "BMW", "DeadPool", "Matrix", "Custom"};
+    return {"Light", "Dark",        "Toyota",   "Ford",   "BMW",    "Ferrari",
+            "Lamborghini", "Dodge", "DeadPool", "Matrix", "Custom"};
 }
 
 StyleColors colorsForPreset(const QString &name)
@@ -70,11 +71,17 @@ StyleColors colorsForPreset(const QString &name)
         return {QColor(0x2B, 0x2E, 0x33), QColor(0x24, 0x27, 0x2B), QColor(0x4C, 0xA6, 0xFF)};
     if (name == QLatin1String("Toyota")) // official red/black/white: red chrome, black dials
         return {QColor(0xEB, 0x0A, 0x1E), QColor(0x14, 0x14, 0x16), QColor(0xFF, 0xFF, 0xFF)};
-    if (name == QLatin1String("Ford")) // blue / white, pure-white chrome lettering
-        return {QColor(0x00, 0x34, 0x78), QColor(0xF4, 0xF8, 0xFD), QColor(0x3C, 0x7D, 0xD9),
+    if (name == QLatin1String("Ford")) // official Ford Blue chrome, white dials, Grabber accent
+        return {QColor(0x00, 0x09, 0x5B), QColor(0xF4, 0xF8, 0xFD), QColor(0x17, 0x00, 0xF4),
                 QColor(), QColor(0xFF, 0xFF, 0xFF)};
     if (name == QLatin1String("BMW")) // roundel white/black/blue: white chrome, black dials
         return {QColor(0xF5, 0xF6, 0xF8), QColor(0x10, 0x12, 0x14), QColor(0x00, 0x66, 0xB1)};
+    if (name == QLatin1String("Ferrari")) // Rosso Corsa chrome, black dials, Ferrari-yellow details
+        return {QColor(0xD4, 0x00, 0x00), QColor(0x1A, 0x1A, 0x1A), QColor(0xFF, 0xCC, 0x00)};
+    if (name == QLatin1String("Lamborghini")) // official black and gold
+        return {QColor(0x00, 0x00, 0x00), QColor(0x16, 0x14, 0x0F), QColor(0xFE, 0xD2, 0x60)};
+    if (name == QLatin1String("Dodge")) // muscle black with Dodge-red details
+        return {QColor(0x0E, 0x0E, 0x10), QColor(0x1C, 0x1B, 0x1E), QColor(0xBA, 0x0C, 0x2F)};
     if (name == QLatin1String("DeadPool")) // pink and white with red details
         return {QColor(0xE8, 0x5D, 0x88), QColor(0xFF, 0xFF, 0xFF), QColor(0xC8, 0x10, 0x2E)};
     if (name == QLatin1String("Matrix")) // green console-on-black
