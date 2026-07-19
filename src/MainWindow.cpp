@@ -33,9 +33,17 @@
 #include <QClipboard>
 #include <QCloseEvent>
 #include <QGuiApplication>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QKeySequence>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QShortcut>
 #include <QToolBar>
+#include <QUrl>
+#include <QVersionNumber>
 
 #include "AppSettings.h"
 #include "AppStyle.h"
@@ -59,6 +67,16 @@
 
 namespace {
 // Frame formatting/trimming now lives in FrameTableModel.
+
+// FR-1 auto-reconnect: retries after an unexpected drop, with growing delays
+// (3 s, 6 s, ... up to the cap) so a car being switched off doesn't cause an
+// endless fast retry loop.
+constexpr int kMaxReconnectAttempts = 5;
+constexpr int kReconnectBaseDelayMs = 3000;
+
+// The releases list rather than /releases/latest: the latter excludes
+// pre-releases, and this project publishes pre-releases while in development.
+const char kReleasesApiUrl[] = "https://api.github.com/repos/llope424/Capstone-II/releases?per_page=1";
 
 // Display ranges (and optional red-zone thresholds) for the gauges, in metric
 // source units. This is the catalog the dashboard layout editor offers; the
@@ -364,12 +382,52 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     buildMenus();
     buildLiveDataTable();
 
-    // Status bar: connection state on the left; adapter info and version on
-    // the right. Plain widgets (not showMessage) so nothing hides them.
+    // Status bar: connection state on the left; link quality, adapter info and
+    // version on the right. Plain widgets (not showMessage) so nothing hides them.
     statusBar()->addWidget(m_statusLabel);
+    m_qualityLabel = new QLabel();
+    m_qualityLabel->setToolTip("Communication quality: command success rate and average "
+                               "round-trip latency (ELM327), or bus frame rate (GVRET).");
+    statusBar()->addPermanentWidget(m_qualityLabel);
     statusBar()->addPermanentWidget(m_deviceInfoLabel);
     auto *versionLabel = new QLabel(QString("v%1").arg(QApplication::applicationVersion()));
     statusBar()->addPermanentWidget(versionLabel);
+
+    // FR-1: automatic reconnection after an unexpected drop.
+    m_reconnectTimer.setSingleShot(true);
+    connect(&m_reconnectTimer, &QTimer::timeout, this, [this]() {
+        if (m_connection->isOpen() || m_elm->isOpen())
+            return;
+        onLogMessage(QString("Auto-reconnect attempt %1 of %2...")
+                         .arg(m_reconnectAttempt)
+                         .arg(kMaxReconnectAttempts));
+        openConnection(m_lastParams);
+    });
+
+    // FR-2: refresh the link-quality readout every 2 s while connected.
+    m_qualityTimer.setInterval(2000);
+    connect(&m_qualityTimer, &QTimer::timeout, this, [this]() {
+        if (m_activeElm && m_elm->isOpen()) {
+            const Elm327Connection::LinkQuality q = m_elm->takeLinkQuality();
+            if (q.total > 0)
+                m_qualityLabel->setText(QString("Link: %1% ok, %2 ms")
+                                            .arg(100 * q.ok / q.total)
+                                            .arg(qRound(q.avgLatencyMs)));
+            else
+                m_qualityLabel->setText("Link: idle");
+        } else if (!m_activeElm && m_connection->isOpen()) {
+            const quint64 delta = m_frameCount - m_lastFrameCount;
+            m_qualityLabel->setText(QString("Bus: %1 frames/s").arg(delta / 2));
+        } else {
+            m_qualityLabel->clear();
+        }
+        m_lastFrameCount = m_frameCount;
+    });
+    m_qualityTimer.start();
+
+    // FR-10: one quiet update check at startup (result only logged if newer).
+    m_network = new QNetworkAccessManager(this);
+    checkForUpdates(false);
 
     const QByteArray geometry = AppSettings::windowGeometry();
     if (!geometry.isEmpty())
@@ -1000,6 +1058,9 @@ void MainWindow::buildDashboardTab(QTabWidget *tabs)
 void MainWindow::onConnectButtonClicked()
 {
     if (m_connection->isOpen() || m_elm->isOpen()) {
+        m_userDisconnect = true; // intentional: no auto-reconnect
+        m_reconnectTimer.stop();
+        m_reconnectAttempt = 0;
         if (m_activeElm) {
             m_elm->stopMonitoring();
             m_elm->close();
@@ -1019,12 +1080,13 @@ void MainWindow::onConnectButtonClicked()
         return;
     }
 
+    // A fresh manual connection supersedes any pending auto-reconnect.
+    m_reconnectTimer.stop();
+    m_reconnectAttempt = 0;
+
     ConnectionParams params;
     if (!NewConnectionDialog::getConnectionParams(this, params))
         return; // user cancelled
-
-    setStatus("Connecting...", 'y');
-    m_deviceInfoLabel->setText("No device info yet.");
 
     const bool serial = params.transport == ConnectionParams::Transport::Serial;
     if (serial && params.serialPort.isEmpty()) {
@@ -1038,6 +1100,18 @@ void MainWindow::onConnectButtonClicked()
         return;
     }
 
+    m_lastParams = params;
+    m_haveParams = true;
+    openConnection(params);
+}
+
+void MainWindow::openConnection(const ConnectionParams &params)
+{
+    m_userDisconnect = false;
+    setStatus("Connecting...", 'y');
+    m_deviceInfoLabel->setText("No device info yet.");
+
+    const bool serial = params.transport == ConnectionParams::Transport::Serial;
     m_activeElm = (params.deviceType == ConnectionParams::DeviceType::Elm327);
     if (m_activeElm) {
         if (serial)
@@ -1052,6 +1126,25 @@ void MainWindow::onConnectButtonClicked()
     }
 
     setConnectedUiState(true);
+}
+
+void MainWindow::scheduleReconnect()
+{
+    if (m_reconnectAttempt >= kMaxReconnectAttempts) {
+        onLogMessage(QString("Auto-reconnect gave up after %1 attempts. Use Connect to retry.")
+                         .arg(kMaxReconnectAttempts));
+        m_reconnectAttempt = 0;
+        return;
+    }
+    ++m_reconnectAttempt;
+    const int delayMs = kReconnectBaseDelayMs * m_reconnectAttempt;
+    setStatus(QString("Reconnecting in %1 s (attempt %2 of %3)...")
+                  .arg(delayMs / 1000)
+                  .arg(m_reconnectAttempt)
+                  .arg(kMaxReconnectAttempts),
+              'y');
+    onLogMessage(QString("Connection lost - retrying in %1 s.").arg(delayMs / 1000));
+    m_reconnectTimer.start(delayMs);
 }
 
 void MainWindow::setConnectedUiState(bool connected)
@@ -1074,6 +1167,10 @@ void MainWindow::setStatus(const QString &text, char kind)
 
 void MainWindow::onConnected()
 {
+    if (m_reconnectAttempt > 0) {
+        onLogMessage(QString("Reconnected (attempt %1).").arg(m_reconnectAttempt));
+        m_reconnectAttempt = 0;
+    }
     setStatus("Connected", 'g');
     m_testRequestButton->setEnabled(true);
     m_monitorAction->setEnabled(true);
@@ -1125,6 +1222,10 @@ void MainWindow::onDisconnected(const QString &reason)
     resetPidSupport();
     if (!reason.isEmpty())
         onLogMessage("Disconnected: " + reason);
+
+    // FR-1: an unexpected drop (not a user-initiated disconnect) retries.
+    if (AppSettings::autoReconnect() && m_haveParams && !m_userDisconnect)
+        scheduleReconnect();
 }
 
 void MainWindow::setDtcButtonsEnabled(bool enabled)
@@ -1494,18 +1595,52 @@ void MainWindow::onCalibrationIdsReceived(const QStringList &ids)
 
 void MainWindow::onCheckFirmwareClicked()
 {
-    // Real update-checking needs a defined firmware source (a version file/URL).
-    // We surface the detected version and explain the framework honestly rather
-    // than pretend to contact a server that doesn't exist.
+    // FR-10: app releases are published on the project's GitHub, so software
+    // update checking is real; scanner (ESP32RET) firmware still has no hosted
+    // image, so only its detected version is reported.
+    checkForUpdates(true);
     const QString current = m_firmwareText.isEmpty() ? "unknown (connect first)" : m_firmwareText;
     QMessageBox::information(
         this, "Firmware / Updates",
         QString("Connected scanner firmware: %1\n\n"
-                "Automatic update checking requires a configured firmware source "
-                "(a published version manifest). None is configured, so this build "
-                "reports the installed version only. ESP32RET itself supports OTA "
-                "updates over WiFi if you host an update image.")
+                "Checking GitHub for application updates - the result appears in "
+                "the connection log. Scanner (ESP32RET) OTA updates would require "
+                "hosting an update image; this build reports its version only.")
             .arg(current));
+}
+
+void MainWindow::checkForUpdates(bool verbose)
+{
+    m_updateCheckVerbose = verbose;
+    QNetworkRequest request{QUrl(QString::fromLatin1(kReleasesApiUrl))};
+    request.setHeader(QNetworkRequest::UserAgentHeader, "ObdSuite"); // GitHub requires a UA
+    QNetworkReply *reply = m_network->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) {
+            if (m_updateCheckVerbose)
+                onLogMessage("Update check failed: " + reply->errorString());
+            return;
+        }
+        const QJsonObject release =
+            QJsonDocument::fromJson(reply->readAll()).array().first().toObject();
+        const QString tag = release.value("tag_name").toString();
+        QString remoteStr = tag;
+        if (remoteStr.startsWith('v') || remoteStr.startsWith('V'))
+            remoteStr.remove(0, 1);
+        const QVersionNumber remote = QVersionNumber::fromString(remoteStr);
+        const QVersionNumber local =
+            QVersionNumber::fromString(QApplication::applicationVersion());
+        if (!remote.isNull() && remote > local) {
+            onLogMessage(QString("Update available: %1 (installed: v%2) - %3")
+                             .arg(tag, QApplication::applicationVersion(),
+                                  release.value("html_url").toString()));
+        } else if (m_updateCheckVerbose) {
+            onLogMessage(QString("Application is up to date (v%1; latest release: %2).")
+                             .arg(QApplication::applicationVersion(),
+                                  tag.isEmpty() ? QStringLiteral("none") : tag));
+        }
+    });
 }
 
 // --- Data logging / replay ---

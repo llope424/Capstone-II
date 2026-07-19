@@ -149,6 +149,7 @@ void Elm327Connection::pumpQueue()
     m_current = m_queue.dequeue();
     m_commandInFlight = true;
     m_rxBuf.clear();
+    m_cmdSentMs = m_clock.isValid() ? m_clock.elapsed() : 0;
     writeRaw(m_current.text + '\r');
     m_commandTimeout.start(kCommandTimeoutMs);
 }
@@ -172,6 +173,10 @@ void Elm327Connection::onReadyRead()
 
     m_commandTimeout.stop();
     m_commandInFlight = false;
+    ++m_qualityTotal;
+    ++m_qualityOk;
+    if (m_clock.isValid())
+        m_qualityLatencySum += double(m_clock.elapsed() - m_cmdSentMs);
     const Command cmd = m_current;
     handleResponse(cmd, response);
     pumpQueue();
@@ -182,6 +187,7 @@ void Elm327Connection::onCommandTimeout()
     if (!m_commandInFlight)
         return;
     m_commandInFlight = false;
+    ++m_qualityTotal; // command went unanswered
 
     // Auto-baud: if the very first reset (ATZ) never answered on serial, retry at
     // the next common baud rate before giving up.
@@ -490,6 +496,18 @@ void Elm327Connection::clearDtcs()
 {
     enqueue({Kind::Clear, "04", 0, 0x04});
     pumpQueue();
+}
+
+Elm327Connection::LinkQuality Elm327Connection::takeLinkQuality()
+{
+    LinkQuality q;
+    q.total = m_qualityTotal;
+    q.ok = m_qualityOk;
+    q.avgLatencyMs = m_qualityOk > 0 ? m_qualityLatencySum / m_qualityOk : 0.0;
+    m_qualityTotal = 0;
+    m_qualityOk = 0;
+    m_qualityLatencySum = 0.0;
+    return q;
 }
 
 void Elm327Connection::readFreezeFrame()

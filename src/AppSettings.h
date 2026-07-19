@@ -26,6 +26,10 @@ void setImperialUnits(bool imperial);
 int pollIntervalMs();
 void setPollIntervalMs(int ms);
 
+// Automatically try to re-establish a dropped connection (SDD FR-1).
+bool autoReconnect();
+void setAutoReconnect(bool on);
+
 // Dashboard layout (SDD FR-6 "configurable dashboard layouts"): the ordered
 // list of PIDs shown as gauges and the grid column count.
 QList<int> dashboardPids();

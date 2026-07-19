@@ -66,6 +66,16 @@ void setPollIntervalMs(int ms)
     QSettings().setValue("liveData/pollIntervalMs", ms);
 }
 
+bool autoReconnect()
+{
+    return QSettings().value("connection/autoReconnect", true).toBool();
+}
+
+void setAutoReconnect(bool on)
+{
+    QSettings().setValue("connection/autoReconnect", on);
+}
+
 QList<int> dashboardPids()
 {
     const QVariant v = QSettings().value("dashboard/pids");

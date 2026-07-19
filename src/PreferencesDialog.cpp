@@ -1,5 +1,6 @@
 #include "PreferencesDialog.h"
 
+#include <QCheckBox>
 #include <QColorDialog>
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -66,6 +67,12 @@ PreferencesDialog::PreferencesDialog(QWidget *parent) : QDialog(parent)
     const int idx = m_pollCombo->findData(AppSettings::pollIntervalMs());
     m_pollCombo->setCurrentIndex(idx >= 0 ? idx : 1);
     form->addRow("Live data rate:", m_pollCombo);
+
+    m_reconnectCheck = new QCheckBox("Reconnect automatically if the connection drops", this);
+    m_reconnectCheck->setChecked(AppSettings::autoReconnect());
+    m_reconnectCheck->setToolTip("Retries the last connection a few times with growing "
+                                 "delays after an unexpected disconnect.");
+    form->addRow("Connection:", m_reconnectCheck);
 
     tabs->addTab(general, "General");
 
@@ -210,6 +217,7 @@ void PreferencesDialog::accept()
 {
     AppSettings::setImperialUnits(m_unitsCombo->currentData().toBool());
     AppSettings::setPollIntervalMs(m_pollCombo->currentData().toInt());
+    AppSettings::setAutoReconnect(m_reconnectCheck->isChecked());
     AppSettings::setStyleName(m_styleCombo->currentText());
     AppSettings::setCustomStyleColor("main", m_mainColor);
     AppSettings::setCustomStyleColor("secondary", m_secondaryColor);

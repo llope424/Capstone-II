@@ -4,6 +4,7 @@
 #include <QDialog>
 
 QT_BEGIN_NAMESPACE
+class QCheckBox;
 class QComboBox;
 class QPushButton;
 QT_END_NAMESPACE
@@ -34,6 +35,7 @@ private:
 
     QComboBox *m_unitsCombo;
     QComboBox *m_pollCombo;
+    QCheckBox *m_reconnectCheck;
 
     QComboBox *m_styleCombo;
     QPushButton *m_mainButton;

@@ -41,6 +41,17 @@ public:
     void stopMonitoring();
     bool isMonitoring() const { return m_monitorTimer.isActive(); }
 
+    // Rolling link-quality counters since the last call (SDD FR-2): commands
+    // completed vs timed out and the average round-trip latency of the
+    // successful ones. Reading the stats resets the window.
+    struct LinkQuality
+    {
+        int total = 0;
+        int ok = 0;
+        double avgLatencyMs = 0.0;
+    };
+    LinkQuality takeLinkQuality();
+
     void sendTestRequest();
     void queryPidSupport();
     void readStoredDtcs();
@@ -110,4 +121,10 @@ private:
     int m_initStep = 0;                // progress through the AT init sequence
     int m_baudAttempt = 0;             // serial auto-baud attempt index
     QElapsedTimer m_clock;             // timestamps synthesized frames, like the scanner clock
+
+    // Link-quality window (see takeLinkQuality()).
+    qint64 m_cmdSentMs = 0;
+    int m_qualityTotal = 0;
+    int m_qualityOk = 0;
+    double m_qualityLatencySum = 0.0;
 };

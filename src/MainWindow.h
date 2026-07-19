@@ -7,6 +7,7 @@
 #include <QVector>
 
 #include "GvretConnection.h"
+#include "NewConnectionDialog.h" // ConnectionParams (kept for auto-reconnect)
 
 class ObdPidMonitor;
 class ObdDtcClient;
@@ -36,6 +37,7 @@ class QAction;
 class QListWidget;
 class QGridLayout;
 class QCloseEvent;
+class QNetworkAccessManager;
 QT_END_NAMESPACE
 
 class MainWindow : public QMainWindow
@@ -112,6 +114,9 @@ private:
     void setConnectedUiState(bool connected);
     void updateMonitorAction(bool running);
     void setStatus(const QString &text, char kind); // 'r'ed / 'g'reen / 'y'ellow
+    void openConnection(const ConnectionParams &params);
+    void scheduleReconnect();          // FR-1 automatic reconnection
+    void checkForUpdates(bool verbose); // FR-10 update notification (GitHub releases)
     void buildLiveDataTable();
     void buildDashboardTab(QTabWidget *tabs);
     void rebuildGauges();
@@ -222,6 +227,22 @@ private:
     bool m_paused = false;
 
     QPlainTextEdit *m_logView;
+
+    // Auto-reconnect (FR-1)
+    ConnectionParams m_lastParams;      // last parameters that led to a session
+    bool m_haveParams = false;
+    bool m_userDisconnect = false;      // true while a disconnect is intentional
+    int m_reconnectAttempt = 0;
+    QTimer m_reconnectTimer;
+
+    // Link quality (FR-2)
+    QLabel *m_qualityLabel = nullptr;
+    QTimer m_qualityTimer;
+    quint64 m_lastFrameCount = 0;
+
+    // Update check (FR-10)
+    QNetworkAccessManager *m_network = nullptr;
+    bool m_updateCheckVerbose = false;
 
     QString m_detectedProtocol;
     QString m_firmwareText;
