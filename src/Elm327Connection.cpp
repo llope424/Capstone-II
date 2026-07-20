@@ -553,8 +553,13 @@ void Elm327Connection::readCalibrationIds()
 
 void Elm327Connection::onIoError()
 {
-    if (!m_device)
-        return;
+    // Guard on the endpoints, not on m_device: m_device is only assigned once
+    // a connection is fully established, but errors also happen while still
+    // connecting (e.g. "connection refused" during an auto-reconnect attempt
+    // while the far end is down). Those must emit disconnected() too, or the
+    // caller's retry chain silently stalls after its first attempt.
+    if (!m_serial && !m_tcp)
+        return; // already torn down
     const QString msg = m_serial ? m_serial->errorString()
                                   : (m_tcp ? m_tcp->errorString() : QStringLiteral("I/O error"));
     emit logMessage("ELM327 link error: " + msg);
