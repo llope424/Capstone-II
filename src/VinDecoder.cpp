@@ -246,7 +246,12 @@ void VinDecoder::onReplyFinished()
     result.plantCountry = o.value("PlantCountry").toString().trimmed();
 
     const QString cylinders = o.value("EngineCylinders").toString().trimmed();
-    const QString displacement = o.value("DisplacementL").toString().trimmed();
+    // NHTSA reports unrounded displacement ("2.998832712"); show one decimal.
+    QString displacement = o.value("DisplacementL").toString().trimmed();
+    bool numeric = false;
+    const double liters = displacement.toDouble(&numeric);
+    if (numeric)
+        displacement = QString::number(liters, 'f', 1);
     if (!displacement.isEmpty() && !cylinders.isEmpty())
         result.engine = QString("%1L, %2-cyl").arg(displacement, cylinders);
     else if (!displacement.isEmpty())
