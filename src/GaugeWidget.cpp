@@ -51,7 +51,8 @@ void GaugeWidget::paintEvent(QPaintEvent *)
     const QPalette pal = palette();
     const QColor faceColor = pal.color(QPalette::Base);
     const QColor textColor = pal.color(QPalette::Text);
-    const bool warning = m_hasWarn && m_hasValue && m_value >= m_warn;
+    const bool warning = (m_hasWarn && m_hasValue && m_value >= m_warn)
+                      || (m_hasWarnLow && m_hasValue && m_value <= m_warnLow);
     const QColor accent = warning ? QColor(0xE0, 0x5A, 0x4B) : pal.color(QPalette::Highlight);
     const QColor track = blend(faceColor, textColor, 0.18);
     const QColor mutedColor = blend(faceColor, textColor, 0.55);
