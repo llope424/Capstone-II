@@ -33,6 +33,8 @@
 #include <QClipboard>
 #include <QCloseEvent>
 #include <QDesktopServices>
+#include <QDir>
+#include <QFile>
 #include <QGuiApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -41,7 +43,10 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QProcess>
+#include <QProgressDialog>
 #include <QShortcut>
+#include <QStandardPaths>
 #include <QToolBar>
 #include <QUrl>
 #include <QVersionNumber>
@@ -896,6 +901,85 @@ void MainWindow::closeEvent(QCloseEvent *event)
     QMainWindow::closeEvent(event);
 }
 
+void MainWindow::downloadAndInstallUpdate(const QString &zipUrl)
+{
+    const QString zipPath =
+        QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
+            .filePath("ObdSuite-update.zip");
+
+    QNetworkRequest request{QUrl(zipUrl)};
+    request.setHeader(QNetworkRequest::UserAgentHeader, "ObdSuite");
+    QNetworkReply *reply = m_network->get(request);
+
+    auto *progress = new QProgressDialog("Downloading update...", "Cancel", 0, 100, this);
+    progress->setWindowModality(Qt::WindowModal);
+    progress->setMinimumDuration(0);
+    connect(progress, &QProgressDialog::canceled, reply, &QNetworkReply::abort);
+    connect(reply, &QNetworkReply::downloadProgress, progress,
+            [progress](qint64 received, qint64 total) {
+                if (total > 0)
+                    progress->setValue(int(received * 100 / total));
+            });
+    connect(reply, &QNetworkReply::finished, this, [this, reply, progress, zipPath]() {
+        progress->close();
+        progress->deleteLater();
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) {
+            if (reply->error() != QNetworkReply::OperationCanceledError)
+                onLogMessage("Update download failed: " + reply->errorString());
+            return;
+        }
+        QFile file(zipPath);
+        if (!file.open(QIODevice::WriteOnly)) {
+            onLogMessage("Cannot write update file: " + zipPath);
+            return;
+        }
+        file.write(reply->readAll());
+        file.close();
+        launchUpdaterAndQuit(zipPath);
+    });
+}
+
+void MainWindow::launchUpdaterAndQuit(const QString &zipPath)
+{
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QString bundledScript = QDir(appDir).filePath("updater.ps1");
+    if (!QFile::exists(bundledScript)) {
+        onLogMessage("updater.ps1 not found next to the app - install manually by "
+                     "unzipping " + zipPath + " over " + appDir + " after closing.");
+        return;
+    }
+
+    // Run a temp copy so extraction can freely overwrite the bundled script.
+    const QString tempScript =
+        QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
+            .filePath("ObdSuite-updater.ps1");
+    QFile::remove(tempScript);
+    if (!QFile::copy(bundledScript, tempScript)) {
+        onLogMessage("Could not stage the updater script.");
+        return;
+    }
+
+    const QStringList args = {"-NoProfile",
+                              "-ExecutionPolicy",
+                              "Bypass",
+                              "-File",
+                              tempScript,
+                              "-ProcessId",
+                              QString::number(QCoreApplication::applicationPid()),
+                              "-Zip",
+                              zipPath,
+                              "-Dest",
+                              appDir};
+    if (!QProcess::startDetached("powershell.exe", args)) {
+        onLogMessage("Could not start the update helper; install manually by unzipping "
+                     + zipPath + " over " + appDir + " after closing.");
+        return;
+    }
+    onLogMessage("Update downloaded - closing to install. The app will restart.");
+    close();
+}
+
 void MainWindow::handleSupportMask(quint8 basePid, const quint8 *mask)
 {
     m_supportMasksSeen |= quint8(1 << (basePid / 0x20));
@@ -1653,18 +1737,22 @@ void MainWindow::checkForUpdates(bool verbose)
             box.setWindowTitle("Update Available");
             box.setText(QString("OBD Suite %1 is available (installed: v%2).")
                             .arg(tag, QApplication::applicationVersion()));
-            box.setInformativeText(
-                "Download opens in your browser. To install: close OBD Suite, "
-                "unzip the package, and replace your current ObdSuite folder. "
-                "(A running program cannot replace its own files.)");
-            QPushButton *downloadButton =
-                box.addButton("Download", QMessageBox::AcceptRole);
+            box.setInformativeText(zipUrl.isEmpty()
+                                       ? QStringLiteral("This release has no packaged ZIP; "
+                                                        "see the release page.")
+                                       : QStringLiteral(
+                                             "Download && Install fetches the update, closes "
+                                             "OBD Suite, swaps in the new files and restarts "
+                                             "it. Settings and vehicle data are preserved."));
+            QPushButton *installButton =
+                zipUrl.isEmpty() ? nullptr
+                                 : box.addButton("Download && Install", QMessageBox::AcceptRole);
             QPushButton *pageButton =
                 box.addButton("Open Release Page", QMessageBox::ActionRole);
             box.addButton("Later", QMessageBox::RejectRole);
             box.exec();
-            if (box.clickedButton() == downloadButton)
-                QDesktopServices::openUrl(QUrl(zipUrl.isEmpty() ? pageUrl : zipUrl));
+            if (installButton && box.clickedButton() == installButton)
+                downloadAndInstallUpdate(zipUrl);
             else if (box.clickedButton() == pageButton)
                 QDesktopServices::openUrl(QUrl(pageUrl));
         } else if (m_updateCheckVerbose) {

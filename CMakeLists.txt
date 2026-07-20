@@ -79,6 +79,13 @@ target_link_libraries(ObdSuite PRIVATE Qt6::Widgets Qt6::SerialPort Qt6::Network
 # by setApplicationVersion); keep GitHub release tags and ZIP names in sync.
 target_compile_definitions(ObdSuite PRIVATE OBDSUITE_VERSION="${PROJECT_VERSION}")
 
+# The self-update helper ships next to the exe (and therefore inside release
+# ZIPs); the app launches a temp copy of it to swap files after exit.
+add_custom_command(TARGET ObdSuite POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_SOURCE_DIR}/scripts/updater.ps1
+        $<TARGET_FILE_DIR:ObdSuite>/updater.ps1)
+
 set_target_properties(ObdSuite PROPERTIES
     WIN32_EXECUTABLE ON
 )

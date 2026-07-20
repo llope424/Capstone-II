@@ -117,6 +117,8 @@ private:
     void openConnection(const ConnectionParams &params);
     void scheduleReconnect();          // FR-1 automatic reconnection
     void checkForUpdates(bool verbose); // FR-10 update notification (GitHub releases)
+    void downloadAndInstallUpdate(const QString &zipUrl); // FR-10 download + helper install
+    void launchUpdaterAndQuit(const QString &zipPath);
     void buildLiveDataTable();
     void buildDashboardTab(QTabWidget *tabs);
     void rebuildGauges();
