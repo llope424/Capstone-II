@@ -67,6 +67,7 @@
 #include "ObdFreezeFrameClient.h"
 #include "ObdPidMonitor.h"
 #include "ObdVehicleInfo.h"
+#include "VinDecoder.h"
 #include "ReportExporter.h"
 #include "SessionLogger.h"
 #include "VehicleStore.h"
@@ -148,6 +149,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     connect(m_vehicleInfo, &ObdVehicleInfo::vinReceived, this, &MainWindow::onVinReceived);
     connect(m_vehicleInfo, &ObdVehicleInfo::calibrationIdsReceived, this, &MainWindow::onCalibrationIdsReceived);
     connect(m_vehicleInfo, &ObdVehicleInfo::logMessage, this, &MainWindow::onLogMessage);
+
+    m_vinDecoder = new VinDecoder(this);
+    connect(m_vinDecoder, &VinDecoder::decoded, this, &MainWindow::onVinDecoded);
 
     m_logger = new SessionLogger(this);
     connect(m_logger, &SessionLogger::frameReplayed, this, &MainWindow::onFrameReplayed);
@@ -486,6 +490,15 @@ QWidget *MainWindow::buildVehicleInfoPane()
     form->addRow("Protocol:", m_protocolValue);
     form->addRow("Calibration IDs:", m_calIdValue);
     form->addRow("Scanner firmware:", m_firmwareValue);
+    m_decodedMakeValue = new QLabel("--");
+    m_decodedModelValue = new QLabel("--");
+    m_decodedYearValue = new QLabel("--");
+    m_decodedTrimValue = new QLabel("--");
+    m_decodedMakeValue->setWordWrap(true);
+    form->addRow("Make:", m_decodedMakeValue);
+    form->addRow("Model:", m_decodedModelValue);
+    form->addRow("Model Year:", m_decodedYearValue);
+    form->addRow("Trim:", m_decodedTrimValue);
     layout->addLayout(form);
     layout->addStretch();
 
@@ -511,12 +524,14 @@ bool editVehicleDialog(QWidget *parent, VehicleProfile &profile)
     auto *makeEdit = new QLineEdit(profile.make);
     auto *modelEdit = new QLineEdit(profile.model);
     auto *yearEdit = new QLineEdit(profile.year);
+    auto *trimEdit = new QLineEdit(profile.trim);
     auto *notesEdit = new QLineEdit(profile.notes);
     form->addRow("Name:", nameEdit);
     form->addRow("VIN:", vinEdit);
     form->addRow("Make:", makeEdit);
     form->addRow("Model:", modelEdit);
     form->addRow("Year:", yearEdit);
+    form->addRow("Trim:", trimEdit);
     form->addRow("Notes:", notesEdit);
     layout->addLayout(form);
 
@@ -533,6 +548,7 @@ bool editVehicleDialog(QWidget *parent, VehicleProfile &profile)
     profile.make = makeEdit->text().trimmed();
     profile.model = modelEdit->text().trimmed();
     profile.year = yearEdit->text().trimmed();
+    profile.trim = trimEdit->text().trimmed();
     profile.notes = notesEdit->text().trimmed();
     if (profile.name.isEmpty())
         profile.name = profile.vin.isEmpty() ? "Unnamed vehicle" : profile.vin;
@@ -620,11 +636,13 @@ void MainWindow::onVehicleSelectionChanged()
     }
 
     const VehicleProfile &v = m_vehicleStore->at(idx);
-    m_vehicleDetails->setText(QString("<b>%1</b><br>VIN: %2<br>Make/Model/Year: %3 %4 %5<br>Notes: %6")
-                                   .arg(v.name.toHtmlEscaped(),
-                                        v.vin.isEmpty() ? "-" : v.vin.toHtmlEscaped(),
-                                        v.make.toHtmlEscaped(), v.model.toHtmlEscaped(), v.year.toHtmlEscaped(),
-                                        v.notes.isEmpty() ? "-" : v.notes.toHtmlEscaped()));
+    m_vehicleDetails->setText(
+        QString("<b>%1</b><br>VIN: %2<br>Make/Model/Year: %3 %4 %5<br>Trim: %6<br>Notes: %7")
+            .arg(v.name.toHtmlEscaped(),
+                 v.vin.isEmpty() ? "-" : v.vin.toHtmlEscaped(),
+                 v.make.toHtmlEscaped(), v.model.toHtmlEscaped(), v.year.toHtmlEscaped(),
+                 v.trim.isEmpty() ? "-" : v.trim.toHtmlEscaped(),
+                 v.notes.isEmpty() ? "-" : v.notes.toHtmlEscaped()));
     for (const DiagnosticRecord &r : v.history) {
         const QString codes = r.dtcs.isEmpty() ? "no codes" : r.dtcs.join(", ");
         m_historyList->addItem(QString("%1  -  %2").arg(r.timestamp, codes));
@@ -634,8 +652,12 @@ void MainWindow::onVehicleSelectionChanged()
 void MainWindow::onAddVehicle()
 {
     VehicleProfile v;
-    // Pre-fill VIN if we've read one this session.
+    // Pre-fill VIN and any decoded make/model/year/trim from this session.
     v.vin = m_vinText;
+    v.make = m_decodedMake;
+    v.model = m_decodedModel;
+    v.year = m_decodedYear;
+    v.trim = m_decodedTrim;
     if (!editVehicleDialog(this, v))
         return;
     const int idx = m_vehicleStore->addVehicle(v);
@@ -1669,6 +1691,44 @@ void MainWindow::onVinReceived(const QString &vin)
     m_vinText = vin;
     m_vinValue->setText(vin.isEmpty() ? "(empty response)" : vin);
     onLogMessage("VIN: " + vin);
+
+    m_decodedMake.clear();
+    m_decodedModel.clear();
+    m_decodedYear.clear();
+    m_decodedTrim.clear();
+    m_decodedMakeValue->setText("--");
+    m_decodedModelValue->setText("--");
+    m_decodedYearValue->setText("--");
+    m_decodedTrimValue->setText("--");
+
+    if (!vin.isEmpty()) {
+        onLogMessage("Decoding VIN...");
+        m_vinDecoder->decode(vin);
+    }
+}
+
+void MainWindow::onVinDecoded(const VinDecodeResult &result)
+{
+    if (!result.valid) {
+        onLogMessage("VIN decode failed: " + result.error);
+        return;
+    }
+
+    m_decodedMake = result.make;
+    m_decodedModel = result.model;
+    m_decodedYear = result.modelYear;
+    m_decodedTrim = result.trim;
+
+    m_decodedMakeValue->setText(result.make.isEmpty() ? "(unknown)" : result.make);
+    m_decodedModelValue->setText(result.model.isEmpty() ? "(unknown)" : result.model);
+    m_decodedYearValue->setText(result.modelYear.isEmpty() ? "(unknown)" : result.modelYear);
+    m_decodedTrimValue->setText(result.trim.isEmpty() ? "(unknown)" : result.trim);
+
+    if (result.fromOnline)
+        onLogMessage(QString("VIN decoded (NHTSA): %1 %2 %3 %4")
+                         .arg(result.modelYear, result.make, result.model, result.trim));
+    else
+        onLogMessage("VIN decoded offline only: " + result.error);
 }
 
 void MainWindow::onCalibrationIdsReceived(const QStringList &ids)

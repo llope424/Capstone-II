@@ -70,6 +70,7 @@ bool VehicleStore::load()
         v.make = o["make"].toString();
         v.model = o["model"].toString();
         v.year = o["year"].toString();
+        v.trim = o["trim"].toString();
         v.notes = o["notes"].toString();
         for (const QJsonValue &rv : o["history"].toArray()) {
             const QJsonObject ro = rv.toObject();
@@ -95,6 +96,7 @@ bool VehicleStore::save() const
         o["make"] = v.make;
         o["model"] = v.model;
         o["year"] = v.year;
+        o["trim"] = v.trim;
         o["notes"] = v.notes;
         QJsonArray hist;
         for (const DiagnosticRecord &r : v.history) {
