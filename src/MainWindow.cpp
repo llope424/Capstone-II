@@ -88,21 +88,36 @@ constexpr int kReconnectBaseDelayMs = 3000;
 // pre-releases, and this project publishes pre-releases while in development.
 const char kReleasesApiUrl[] = "https://api.github.com/repos/llope424/Capstone-II/releases?per_page=1";
 
-// Qt's standard media icons are fixed black glyphs, invisible on dark chrome;
-// paint the play/stop shapes in the current button-text color instead.
-QIcon monitorIcon(bool running, const QColor &color)
+// Traffic-light monitoring icons: green play, red stop, in every style. The
+// thin outline uses the style's button-text color so the shape stays visible
+// even when the chrome is itself red or green (e.g. the Toyota preset).
+QIcon monitorIcon(bool running, const QColor &outline)
 {
+    const QColor fill = running ? QColor(0xD9, 0x3A, 0x2E)   // stop: red
+                                : QColor(0x2E, 0xAE, 0x4F);  // start: green
     QPixmap pm(24, 24);
     pm.fill(Qt::transparent);
     QPainter p(&pm);
     p.setRenderHint(QPainter::Antialiasing, true);
-    p.setPen(Qt::NoPen);
-    p.setBrush(color);
+    p.setPen(QPen(outline, 1.4));
+    p.setBrush(fill);
     if (running)
         p.drawRect(5, 5, 14, 14);
     else
         p.drawPolygon(QPolygonF({QPointF(6, 4), QPointF(20, 12), QPointF(6, 20)}));
-    return QIcon(pm);
+    p.end();
+
+    QIcon icon(pm);
+    // Keep the color identity while disabled (Qt's default would grey it):
+    // same shape at reduced opacity.
+    QPixmap dimmed(24, 24);
+    dimmed.fill(Qt::transparent);
+    QPainter dp(&dimmed);
+    dp.setOpacity(0.45);
+    dp.drawPixmap(0, 0, pm);
+    dp.end();
+    icon.addPixmap(dimmed, QIcon::Disabled);
+    return icon;
 }
 
 // Display ranges (and optional red-zone thresholds) for the gauges, in metric

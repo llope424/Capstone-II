@@ -107,8 +107,23 @@ StyleColors colorsForPreset(const QString &name)
 
 void apply(const QString &presetName)
 {
+    const StyleColors c = colorsForPreset(presetName);
     qApp->setStyle(QStyleFactory::create("Fusion"));
-    qApp->setPalette(buildPalette(colorsForPreset(presetName)));
+    qApp->setPalette(buildPalette(c));
+
+    // Combo-box popup lists pick their colors from a mix of palette roles
+    // that some styles pair badly (e.g. BMW: light chrome + dark content
+    // produced a white list with white text). Pin the popup explicitly to
+    // the secondary surface with luminance-derived text so list entries can
+    // never blend into their background, in any style.
+    const QColor baseText = c.textOverride.isValid() ? c.textOverride : textFor(c.secondary);
+    qApp->setStyleSheet(QString("QComboBox QAbstractItemView {"
+                                " background-color: %1; color: %2;"
+                                " selection-background-color: %3; selection-color: %4;"
+                                " border: 1px solid %5; }")
+                            .arg(c.secondary.name(), baseText.name(), c.details.name(),
+                                 textFor(c.details).name(),
+                                 blend(c.secondary, baseText, 0.35).name()));
 }
 
 }
