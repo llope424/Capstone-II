@@ -32,6 +32,7 @@
 
 #include <QClipboard>
 #include <QCloseEvent>
+#include <QDesktopServices>
 #include <QGuiApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -1632,9 +1633,40 @@ void MainWindow::checkForUpdates(bool verbose)
         const QVersionNumber local =
             QVersionNumber::fromString(QApplication::applicationVersion());
         if (!remote.isNull() && remote > local) {
+            const QString pageUrl = release.value("html_url").toString();
+            // Prefer the packaged ZIP asset for a direct download.
+            QString zipUrl;
+            const QJsonArray assets = release.value("assets").toArray();
+            for (const QJsonValue &asset : assets) {
+                const QString url =
+                    asset.toObject().value("browser_download_url").toString();
+                if (url.endsWith(".zip", Qt::CaseInsensitive)) {
+                    zipUrl = url;
+                    break;
+                }
+            }
             onLogMessage(QString("Update available: %1 (installed: v%2) - %3")
-                             .arg(tag, QApplication::applicationVersion(),
-                                  release.value("html_url").toString()));
+                             .arg(tag, QApplication::applicationVersion(), pageUrl));
+
+            QMessageBox box(this);
+            box.setIcon(QMessageBox::Information);
+            box.setWindowTitle("Update Available");
+            box.setText(QString("OBD Suite %1 is available (installed: v%2).")
+                            .arg(tag, QApplication::applicationVersion()));
+            box.setInformativeText(
+                "Download opens in your browser. To install: close OBD Suite, "
+                "unzip the package, and replace your current ObdSuite folder. "
+                "(A running program cannot replace its own files.)");
+            QPushButton *downloadButton =
+                box.addButton("Download", QMessageBox::AcceptRole);
+            QPushButton *pageButton =
+                box.addButton("Open Release Page", QMessageBox::ActionRole);
+            box.addButton("Later", QMessageBox::RejectRole);
+            box.exec();
+            if (box.clickedButton() == downloadButton)
+                QDesktopServices::openUrl(QUrl(zipUrl.isEmpty() ? pageUrl : zipUrl));
+            else if (box.clickedButton() == pageButton)
+                QDesktopServices::openUrl(QUrl(pageUrl));
         } else if (m_updateCheckVerbose) {
             onLogMessage(QString("Application is up to date (v%1; latest release: %2).")
                              .arg(QApplication::applicationVersion(),
