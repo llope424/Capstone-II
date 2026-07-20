@@ -15,7 +15,7 @@ public:
                          double min, double max, QWidget *parent = nullptr);
 
     void setValue(double value);
-    void setWarnThreshold(double value) { m_warn = value; m_hasWarn = true; update(); }
+    void setWarnLowThreshold(double value) { m_warnLow = value; m_hasWarnLow = true; update(); }
 
     QSize sizeHint() const override { return QSize(170, 170); }
     QSize minimumSizeHint() const override { return QSize(130, 130); }
@@ -32,4 +32,7 @@ private:
     bool m_hasValue = false;
     double m_warn = 0.0;
     bool m_hasWarn = false;
+    double m_warnLow = 0.0;
+    bool m_hasWarnLow = false;
+};
 };
