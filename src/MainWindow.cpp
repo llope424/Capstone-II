@@ -128,25 +128,25 @@ struct GaugeCatalogEntry
     quint8 pid;
     double min;
     double max;
-    bool hasWarn;
+    bool hasWarn;       // alert when value goes ABOVE this threshold
     double warn;
+    bool hasWarnLow;    // alert when value drops BELOW this threshold
+    double warnLow;
 };
 
-const QVector<GaugeCatalogEntry> &gaugeCatalog()
-{
-    static const QVector<GaugeCatalogEntry> catalog = {
-        {0x0C, 0, 8000, true, 6500},   // Engine RPM
-        {0x0D, 0, 240, false, 0},      // Vehicle Speed
-        {0x05, -40, 150, true, 105},   // Coolant Temperature
-        {0x04, 0, 100, false, 0},      // Engine Load
-        {0x11, 0, 100, false, 0},      // Throttle Position
-        {0x0F, -40, 150, false, 0},    // Intake Air Temperature
-        {0x42, 0, 16, false, 0},       // Control Module Voltage
-        {0x0A, 0, 765, false, 0},      // Fuel Pressure
-        {0x06, -100, 100, false, 0},   // Short-Term Fuel Trim B1
-        {0x14, 0, 1.3, false, 0},      // O2 Sensor 1 Voltage
+static const QVector<GaugeCatalogEntry> catalog = {
+        //  PID   min    max   hasWarn warn  hasWarnLow warnLow
+        {0x0C, 0, 8000,  true,  6500,  false, 0},      // Engine RPM
+        {0x0D, 0, 240,   true,  180,   false, 0},      // Vehicle Speed
+        {0x05, -40, 150, true,  105,   false, 0},      // Coolant Temperature
+        {0x04, 0, 100,   true,  90,    false, 0},      // Engine Load
+        {0x11, 0, 100,   false, 0,     false, 0},      // Throttle Position
+        {0x0F, -40, 150, true,  80,    false, 0},      // Intake Air Temperature
+        {0x42, 0, 16,    true,  15.5,  true,  11.0},   // Module Voltage
+        {0x0A, 0, 765,   false, 0,     false, 0},      // Fuel Pressure
+        {0x06, -100, 100,false, 0,     false, 0},      // Short-Term Fuel Trim B1
+        {0x14, 0, 1.3,   false, 0,     true,  0.1},    // O2 Sensor
     };
-    return catalog;
 }
 }
 
@@ -917,8 +917,10 @@ void MainWindow::rebuildGauges()
         const double max = Units::display(cfg->max, unit, m_imperial);
         auto *gauge = new GaugeWidget(name, Units::displayUnit(unit, m_imperial),
                                       min, max, m_gaugeGrid->parentWidget());
-        if (cfg->hasWarn)
+       if (cfg->hasWarn)
             gauge->setWarnThreshold(Units::display(cfg->warn, unit, m_imperial));
+        if (cfg->hasWarnLow)
+            gauge->setWarnLowThreshold(Units::display(cfg->warnLow, unit, m_imperial));
         m_gaugeGrid->addWidget(gauge, rowIdx, col);
         m_gauges.insert(cfg->pid, gauge);
 
@@ -1536,9 +1538,48 @@ void MainWindow::onPidUpdated(quint8 pid, double value)
     if (git != m_gauges.constEnd())
         git.value()->setValue(shown);
 
-    // Live chart, if this PID is the selected series.
+   // Live chart, if this PID is the selected series.
     if (m_chartPidCombo->currentData().toUInt() == pid)
         m_chart->addSample(shown);
+
+    // --- Threshold alerts (Nurdos Meirambek) ---
+    for (const GaugeCatalogEntry &entry : gaugeCatalog()) {
+        if (entry.pid != pid)
+            continue;
+
+        QString pidName;
+        for (const PidDefinition &def : ObdPidMonitor::standardPids()) {
+            if (def.pid == pid) { pidName = def.name; break; }
+        }
+
+        const QString unit = m_pidUnit.value(pid);
+
+        if (entry.hasWarn) {
+            double warnDisplay = Units::display(entry.warn, unit, m_imperial);
+            if (shown >= warnDisplay) {
+                setStatus(QString::fromUtf8("\xe2\x9a\xa0 ") + pidName
+                          + " is HIGH: " + QString::number(shown, 'f', 1)
+                          + " " + Units::displayUnit(unit, m_imperial), 'r');
+                onLogMessage("ALERT: " + pidName + " exceeded high threshold ("
+                             + QString::number(shown, 'f', 1) + " >= "
+                             + QString::number(warnDisplay, 'f', 1) + ")");
+            }
+        }
+
+        if (entry.hasWarnLow) {
+            double warnLowDisplay = Units::display(entry.warnLow, unit, m_imperial);
+            if (shown <= warnLowDisplay) {
+                setStatus(QString::fromUtf8("\xe2\x9a\xa0 ") + pidName
+                          + " is LOW: " + QString::number(shown, 'f', 1)
+                          + " " + Units::displayUnit(unit, m_imperial), 'r');
+                onLogMessage("ALERT: " + pidName + " dropped below low threshold ("
+                             + QString::number(shown, 'f', 1) + " <= "
+                             + QString::number(warnLowDisplay, 'f', 1) + ")");
+            }
+        }
+
+        break;
+    }
 }
 
 void MainWindow::onSendTestRequestClicked()
