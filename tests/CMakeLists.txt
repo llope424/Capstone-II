@@ -36,6 +36,25 @@ target_link_libraries(ObdSuiteTransportTests PRIVATE Qt6::Core Qt6::Test Qt6::Ne
 set_target_properties(ObdSuiteTransportTests PROPERTIES WIN32_EXECUTABLE OFF)
 add_test(NAME ObdSuiteTransportTests COMMAND ObdSuiteTransportTests)
 
+# --- App link test: the real Elm327Connection against the real emulator over
+# --- a loopback TCP socket (init, PIDs, DTCs, freeze frame, VIN) ---
+qt_add_executable(ObdSuiteAppLinkTests
+    test_app_link.cpp
+    ${CMAKE_SOURCE_DIR}/src/Elm327Connection.cpp
+    ${CMAKE_SOURCE_DIR}/src/ObdPidMonitor.cpp
+    ${CMAKE_SOURCE_DIR}/src/ObdDtcClient.cpp
+    ${CMAKE_SOURCE_DIR}/src/GvretConnection.cpp
+    ${CMAKE_SOURCE_DIR}/src/emulator/Elm327EmulatorEngine.cpp
+    ${CMAKE_SOURCE_DIR}/src/emulator/ObdMessageModel.cpp
+    ${CMAKE_SOURCE_DIR}/src/emulator/PidEncoders.cpp
+    ${CMAKE_SOURCE_DIR}/src/emulator/EmulatorTransport.cpp
+)
+target_include_directories(ObdSuiteAppLinkTests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(ObdSuiteAppLinkTests
+    PRIVATE Qt6::Core Qt6::Gui Qt6::Test Qt6::Network Qt6::SerialPort)
+set_target_properties(ObdSuiteAppLinkTests PROPERTIES WIN32_EXECUTABLE OFF)
+add_test(NAME ObdSuiteAppLinkTests COMMAND ObdSuiteAppLinkTests)
+
 # --- VIN decoder tests (offline decode helpers only, no network round-trip) ---
 qt_add_executable(ObdSuiteVinDecoderTests
     test_vin_decoder.cpp
