@@ -21,9 +21,12 @@ QString styleName()
     const QString stored = settings.value("appearance/style").toString();
     if (!stored.isEmpty())
         return stored;
-    // Migration from the pre-styles boolean theme setting.
-    return settings.value("appearance/darkTheme", false).toBool() ? QStringLiteral("Dark")
-                                                                  : QStringLiteral("Light");
+    // Migration from the pre-styles boolean theme setting; fresh installs
+    // default to Dark.
+    if (settings.contains("appearance/darkTheme"))
+        return settings.value("appearance/darkTheme").toBool() ? QStringLiteral("Dark")
+                                                               : QStringLiteral("Light");
+    return QStringLiteral("Dark");
 }
 
 void setStyleName(const QString &name)

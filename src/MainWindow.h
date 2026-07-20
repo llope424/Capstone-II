@@ -160,6 +160,7 @@ private:
     // Quick-access toolbar actions; the status bar carries the labels.
     QAction *m_connectAction = nullptr;  // "Connect..." when idle, "Disconnect" when open
     QAction *m_monitorAction = nullptr;  // Start/Stop Monitoring toggle
+    bool m_monitorRunning = false;       // for re-tinting the icon on style change
     QAction *m_readDtcsAction = nullptr; // enabled only while connected
     QLabel *m_statusLabel;
     char m_statusKind = 'r'; // current setStatus() kind, for restyling on theme change

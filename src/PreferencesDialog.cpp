@@ -123,13 +123,11 @@ PreferencesDialog::PreferencesDialog(QWidget *parent) : QDialog(parent)
     tabs->addTab(stylePage, "Style");
     outer->addWidget(tabs);
 
-    auto *buttons = new QDialogButtonBox(
-        QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::Apply, this);
-    buttons->button(QDialogButtonBox::Apply)->setToolTip("Re-apply the selected style now.");
+    // No Apply button: style changes preview live the moment they are made,
+    // so OK/Cancel (keep/revert) is the whole decision.
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
-    connect(buttons->button(QDialogButtonBox::Apply), &QPushButton::clicked, this,
-            &PreferencesDialog::applyStyleNow);
     outer->addWidget(buttons);
 
     connect(m_styleCombo, &QComboBox::currentTextChanged, this,

@@ -43,6 +43,9 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QPainter>
+#include <QPixmap>
+#include <QPolygonF>
 #include <QProcess>
 #include <QProgressDialog>
 #include <QShortcut>
@@ -84,6 +87,23 @@ constexpr int kReconnectBaseDelayMs = 3000;
 // The releases list rather than /releases/latest: the latter excludes
 // pre-releases, and this project publishes pre-releases while in development.
 const char kReleasesApiUrl[] = "https://api.github.com/repos/llope424/Capstone-II/releases?per_page=1";
+
+// Qt's standard media icons are fixed black glyphs, invisible on dark chrome;
+// paint the play/stop shapes in the current button-text color instead.
+QIcon monitorIcon(bool running, const QColor &color)
+{
+    QPixmap pm(24, 24);
+    pm.fill(Qt::transparent);
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing, true);
+    p.setPen(Qt::NoPen);
+    p.setBrush(color);
+    if (running)
+        p.drawRect(5, 5, 14, 14);
+    else
+        p.drawPolygon(QPolygonF({QPointF(6, 4), QPointF(20, 12), QPointF(6, 20)}));
+    return QIcon(pm);
+}
 
 // Display ranges (and optional red-zone thresholds) for the gauges, in metric
 // source units. This is the catalog the dashboard layout editor offers; the
@@ -754,8 +774,8 @@ void MainWindow::buildMenus()
     connect(m_connectAction, &QAction::triggered, this, &MainWindow::onConnectButtonClicked);
     toolbar->addSeparator();
 
-    m_monitorAction = toolbar->addAction(style->standardIcon(QStyle::SP_MediaPlay),
-                                         "Start Monitoring");
+    m_monitorAction = toolbar->addAction(
+        monitorIcon(false, palette().color(QPalette::ButtonText)), "Start Monitoring");
     m_monitorAction->setToolTip("Continuously poll the standard OBD-II PIDs (shown on Live Data).");
     m_monitorAction->setEnabled(false);
     connect(m_monitorAction, &QAction::triggered, this, &MainWindow::onMonitorButtonClicked);
@@ -775,9 +795,9 @@ void MainWindow::buildMenus()
 
 void MainWindow::updateMonitorAction(bool running)
 {
+    m_monitorRunning = running;
     m_monitorAction->setText(running ? "Stop Monitoring" : "Start Monitoring");
-    m_monitorAction->setIcon(style()->standardIcon(running ? QStyle::SP_MediaStop
-                                                           : QStyle::SP_MediaPlay));
+    m_monitorAction->setIcon(monitorIcon(running, palette().color(QPalette::ButtonText)));
 }
 
 void MainWindow::onPreferences()
@@ -787,9 +807,10 @@ void MainWindow::onPreferences()
         return;
 
     // Style (may have changed preset or custom colors); restyle the status
-    // label so its state color matches the new chrome.
+    // label and the palette-painted monitor icon to match the new chrome.
     AppStyle::apply(AppSettings::styleName());
     setStatus(m_statusLabel->text(), m_statusKind);
+    updateMonitorAction(m_monitorRunning);
 
     // Units: refresh every value display so labels and numbers stay consistent.
     const bool imperial = AppSettings::imperialUnits();
@@ -1741,17 +1762,9 @@ void MainWindow::onCalibrationIdsReceived(const QStringList &ids)
 void MainWindow::onCheckFirmwareClicked()
 {
     // FR-10: app releases are published on the project's GitHub, so software
-    // update checking is real; scanner (ESP32RET) firmware still has no hosted
-    // image, so only its detected version is reported.
+    // update checking is real; the result (update offer, up-to-date, or the
+    // failure reason) is reported in a dialog when the check completes.
     checkForUpdates(true);
-    const QString current = m_firmwareText.isEmpty() ? "unknown (connect first)" : m_firmwareText;
-    QMessageBox::information(
-        this, "Firmware / Updates",
-        QString("Connected scanner firmware: %1\n\n"
-                "Checking GitHub for application updates - the result appears in "
-                "the connection log. Scanner (ESP32RET) OTA updates would require "
-                "hosting an update image; this build reports its version only.")
-            .arg(current));
 }
 
 void MainWindow::checkForUpdates(bool verbose)
@@ -1763,8 +1776,12 @@ void MainWindow::checkForUpdates(bool verbose)
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         reply->deleteLater();
         if (reply->error() != QNetworkReply::NoError) {
-            if (m_updateCheckVerbose)
+            if (m_updateCheckVerbose) {
                 onLogMessage("Update check failed: " + reply->errorString());
+                QMessageBox::warning(this, "Update Check",
+                                     "Could not check GitHub for updates:\n"
+                                         + reply->errorString());
+            }
             return;
         }
         const QJsonObject release =
@@ -1819,6 +1836,16 @@ void MainWindow::checkForUpdates(bool verbose)
             onLogMessage(QString("Application is up to date (v%1; latest release: %2).")
                              .arg(QApplication::applicationVersion(),
                                   tag.isEmpty() ? QStringLiteral("none") : tag));
+            const QString firmware =
+                m_firmwareText.isEmpty() ? QStringLiteral("unknown (connect first)")
+                                         : m_firmwareText;
+            QMessageBox::information(
+                this, "Update Check",
+                QString("You are running the latest version (v%1).\n"
+                        "Latest published release: %2.\n\n"
+                        "Connected scanner firmware: %3")
+                    .arg(QApplication::applicationVersion(),
+                         tag.isEmpty() ? QStringLiteral("none") : tag, firmware));
         }
     });
 }
