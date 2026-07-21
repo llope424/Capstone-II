@@ -21,18 +21,42 @@ QVector<PidDefinition> ObdPidMonitor::standardPids()
 {
     const QString pct = QStringLiteral("%");
     const QString dC = degreesC();
+    const QString deg = QString(QChar(0x00B0));
+    const QString kPa = QStringLiteral("kPa");
+    const QString volts = QStringLiteral("V");
 
+    // 28 standard SAE J1979 Mode 01 parameters (SDD: at least 25 simultaneous
+    // PIDs). Vehicles report which of these they implement via the support
+    // bitmasks; unsupported ones are marked n/a in the UI.
     return {
-        {0x04, "Engine Load",              pct,             1, [](const quint8 *d) { return d[0] * 100.0 / 255.0; }},
-        {0x05, "Coolant Temperature",      dC,              1, [](const quint8 *d) { return d[0] - 40.0; }},
-        {0x06, "Short-Term Fuel Trim B1",  pct,             1, [](const quint8 *d) { return d[0] * 100.0 / 128.0 - 100.0; }},
-        {0x0A, "Fuel Pressure",            QStringLiteral("kPa"),  1, [](const quint8 *d) { return d[0] * 3.0; }},
+        {0x04, "Engine Load",              pct,  1, [](const quint8 *d) { return d[0] * 100.0 / 255.0; }},
+        {0x05, "Coolant Temperature",      dC,   1, [](const quint8 *d) { return d[0] - 40.0; }},
+        {0x06, "Short-Term Fuel Trim B1",  pct,  1, [](const quint8 *d) { return d[0] * 100.0 / 128.0 - 100.0; }},
+        {0x07, "Long-Term Fuel Trim B1",   pct,  1, [](const quint8 *d) { return d[0] * 100.0 / 128.0 - 100.0; }},
+        {0x0A, "Fuel Pressure",            kPa,  1, [](const quint8 *d) { return d[0] * 3.0; }},
+        {0x0B, "Intake Manifold Pressure", kPa,  1, [](const quint8 *d) { return double(d[0]); }},
         {0x0C, "Engine RPM",               QStringLiteral("rpm"),  2, [](const quint8 *d) { return (d[0] * 256.0 + d[1]) / 4.0; }},
         {0x0D, "Vehicle Speed",            QStringLiteral("km/h"), 1, [](const quint8 *d) { return double(d[0]); }},
-        {0x0F, "Intake Air Temperature",   dC,              1, [](const quint8 *d) { return d[0] - 40.0; }},
-        {0x11, "Throttle Position",        pct,             1, [](const quint8 *d) { return d[0] * 100.0 / 255.0; }},
-        {0x14, "O2 Sensor 1 Voltage",      QStringLiteral("V"),    2, [](const quint8 *d) { return d[0] / 200.0; }},
-        {0x42, "Control Module Voltage",   QStringLiteral("V"),    2, [](const quint8 *d) { return (d[0] * 256.0 + d[1]) / 1000.0; }},
+        {0x0E, "Timing Advance",           deg,  1, [](const quint8 *d) { return d[0] / 2.0 - 64.0; }},
+        {0x0F, "Intake Air Temperature",   dC,   1, [](const quint8 *d) { return d[0] - 40.0; }},
+        {0x10, "MAF Air Flow Rate",        QStringLiteral("g/s"),  2, [](const quint8 *d) { return (d[0] * 256.0 + d[1]) / 100.0; }},
+        {0x11, "Throttle Position",        pct,  1, [](const quint8 *d) { return d[0] * 100.0 / 255.0; }},
+        {0x14, "O2 Sensor 1 Voltage",      volts, 2, [](const quint8 *d) { return d[0] / 200.0; }},
+        {0x15, "O2 Sensor 2 Voltage",      volts, 2, [](const quint8 *d) { return d[0] / 200.0; }},
+        {0x1F, "Run Time Since Start",     QStringLiteral("s"),    2, [](const quint8 *d) { return d[0] * 256.0 + d[1]; }},
+        {0x21, "Distance With MIL On",     QStringLiteral("km"),   2, [](const quint8 *d) { return d[0] * 256.0 + d[1]; }},
+        {0x2E, "Commanded EVAP Purge",     pct,  1, [](const quint8 *d) { return d[0] * 100.0 / 255.0; }},
+        {0x2F, "Fuel Tank Level",          pct,  1, [](const quint8 *d) { return d[0] * 100.0 / 255.0; }},
+        {0x33, "Barometric Pressure",      kPa,  1, [](const quint8 *d) { return double(d[0]); }},
+        {0x42, "Control Module Voltage",   volts, 2, [](const quint8 *d) { return (d[0] * 256.0 + d[1]) / 1000.0; }},
+        {0x43, "Absolute Load Value",      pct,  2, [](const quint8 *d) { return (d[0] * 256.0 + d[1]) * 100.0 / 255.0; }},
+        {0x44, "Commanded Equiv. Ratio",   QStringLiteral("lambda"), 2, [](const quint8 *d) { return (d[0] * 256.0 + d[1]) / 32768.0; }},
+        {0x45, "Relative Throttle Pos.",   pct,  1, [](const quint8 *d) { return d[0] * 100.0 / 255.0; }},
+        {0x46, "Ambient Air Temperature",  dC,   1, [](const quint8 *d) { return d[0] - 40.0; }},
+        {0x49, "Accelerator Pedal Pos.",   pct,  1, [](const quint8 *d) { return d[0] * 100.0 / 255.0; }},
+        {0x4C, "Commanded Throttle",       pct,  1, [](const quint8 *d) { return d[0] * 100.0 / 255.0; }},
+        {0x5C, "Engine Oil Temperature",   dC,   1, [](const quint8 *d) { return d[0] - 40.0; }},
+        {0x5E, "Engine Fuel Rate",         QStringLiteral("L/h"),  2, [](const quint8 *d) { return (d[0] * 256.0 + d[1]) / 20.0; }},
     };
 }
 

@@ -528,6 +528,14 @@ void Elm327Connection::readFreezeFrame()
     pumpQueue();
 }
 
+void Elm327Connection::readReadiness()
+{
+    // Mode 01 PID 01. The reply reaches the UI as a synthesized frame (no PID
+    // definition matches 0x01), where MainWindow decodes the readiness bits.
+    enqueue({Kind::Pid, "0101"});
+    pumpQueue();
+}
+
 void Elm327Connection::queryPidSupport()
 {
     // Mode 01 PIDs 00/20/40: bitmasks of which live-data PIDs the vehicle

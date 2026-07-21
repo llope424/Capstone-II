@@ -20,6 +20,10 @@ QString displayUnit(const QString &metricUnit, bool imperial)
         return degreesF();
     if (metricUnit == QLatin1String("kPa"))
         return QStringLiteral("psi");
+    if (metricUnit == QLatin1String("km"))
+        return QStringLiteral("mi");
+    if (metricUnit == QLatin1String("L/h"))
+        return QStringLiteral("gal/h");
     return metricUnit;
 }
 
@@ -33,6 +37,10 @@ double display(double metricValue, const QString &metricUnit, bool imperial)
         return metricValue * 9.0 / 5.0 + 32.0;
     if (metricUnit == QLatin1String("kPa"))
         return metricValue * 0.1450377;
+    if (metricUnit == QLatin1String("km"))
+        return metricValue * 0.6213712;
+    if (metricUnit == QLatin1String("L/h"))
+        return metricValue * 0.2641721;
     return metricValue;
 }
 

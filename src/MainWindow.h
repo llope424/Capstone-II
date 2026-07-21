@@ -67,6 +67,9 @@ private slots:
     void onFreezeFrameDtc(const QString &code, bool present);
     void onFreezeFramePid(quint8 pid, double value, bool ok);
 
+    // I/M readiness (Mode 01 PID 01)
+    void onReadReadinessClicked();
+
     // Vehicle info
     void onReadVinClicked();
     void onReadCalIdsClicked();
@@ -130,6 +133,7 @@ private:
     // Supported-PID detection (Mode 01 masks 00/20/40, queried on connect).
     void resetPidSupport();
     void handleSupportMask(quint8 basePid, const quint8 *mask);
+    void handleReadiness(const quint8 *data); // 4 bytes A-D of Mode 01 PID 01
     void updatePidSupportUi();
     bool isPidKnownUnsupported(quint8 pid) const;
     void markPidRowUnsupported(quint8 pid, bool unsupported);
@@ -191,6 +195,8 @@ private:
     QPushButton *m_readPendingButton;
     QPushButton *m_readPermanentButton;
     QPushButton *m_readFreezeButton;
+    QPushButton *m_readReadinessButton;
+    QLabel *m_readinessLabel;
     QPushButton *m_clearDtcButton;
     QTableWidget *m_dtcTable;
     QLabel *m_freezeInfoLabel;

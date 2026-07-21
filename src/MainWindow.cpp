@@ -144,7 +144,23 @@ const QVector<GaugeCatalogEntry> &gaugeCatalog()
         {0x42, 0, 16, false, 0},       // Control Module Voltage
         {0x0A, 0, 765, false, 0},      // Fuel Pressure
         {0x06, -100, 100, false, 0},   // Short-Term Fuel Trim B1
+        {0x07, -100, 100, false, 0},   // Long-Term Fuel Trim B1
         {0x14, 0, 1.3, false, 0},      // O2 Sensor 1 Voltage
+        {0x15, 0, 1.3, false, 0},      // O2 Sensor 2 Voltage
+        {0x0B, 0, 255, false, 0},      // Intake Manifold Pressure
+        {0x0E, -64, 64, false, 0},     // Timing Advance
+        {0x10, 0, 300, false, 0},      // MAF Air Flow Rate
+        {0x2E, 0, 100, false, 0},      // Commanded EVAP Purge
+        {0x2F, 0, 100, false, 0},      // Fuel Tank Level
+        {0x33, 0, 120, false, 0},      // Barometric Pressure
+        {0x43, 0, 100, false, 0},      // Absolute Load Value
+        {0x44, 0, 2, false, 0},        // Commanded Equivalence Ratio
+        {0x45, 0, 100, false, 0},      // Relative Throttle Position
+        {0x46, -40, 60, false, 0},     // Ambient Air Temperature
+        {0x49, 0, 100, false, 0},      // Accelerator Pedal Position
+        {0x4C, 0, 100, false, 0},      // Commanded Throttle
+        {0x5C, -40, 160, true, 130},   // Engine Oil Temperature
+        {0x5E, 0, 60, false, 0},       // Engine Fuel Rate
     };
     return catalog;
 }
@@ -256,6 +272,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     m_readPendingButton = new QPushButton("Read Pending");
     m_readPermanentButton = new QPushButton("Read Permanent");
     m_readFreezeButton = new QPushButton("Read Freeze Frame");
+    m_readReadinessButton = new QPushButton("Readiness");
+    m_readReadinessButton->setToolTip("Mode 01 PID 01 - check-engine light status, trouble-code "
+                                      "count, and the emissions monitors' inspection readiness.");
+    connect(m_readReadinessButton, &QPushButton::clicked,
+            this, &MainWindow::onReadReadinessClicked);
     m_clearDtcButton = new QPushButton("Clear DTCs...");
     m_readStoredButton->setToolTip("Service 03 - confirmed trouble codes (MIL/check-engine codes).");
     m_readPendingButton->setToolTip("Service 07 - pending codes not yet confirmed.");
@@ -272,9 +293,16 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     dtcBar->addWidget(m_readPendingButton);
     dtcBar->addWidget(m_readPermanentButton);
     dtcBar->addWidget(m_readFreezeButton);
+    dtcBar->addWidget(m_readReadinessButton);
     dtcBar->addStretch();
     dtcBar->addWidget(m_clearDtcButton);
     dtcLayout->addLayout(dtcBar);
+
+    // I/M readiness summary (filled by Readiness; rich text).
+    m_readinessLabel = new QLabel("Readiness: not read yet.");
+    m_readinessLabel->setWordWrap(true);
+    m_readinessLabel->setTextFormat(Qt::RichText);
+    dtcLayout->addWidget(m_readinessLabel);
 
     m_dtcTable = new QTableWidget(0, 3, dtcPage);
     m_dtcTable->setHorizontalHeaderLabels({"Code", "Status", "Description"});
@@ -1038,6 +1066,73 @@ void MainWindow::launchUpdaterAndQuit(const QString &zipPath)
     close();
 }
 
+void MainWindow::onReadReadinessClicked()
+{
+    m_readinessLabel->setText("Reading readiness...");
+    if (m_activeElm) {
+        m_elm->readReadiness();
+    } else {
+        QByteArray payload;
+        payload.append(char(0x02));
+        payload.append(char(0x01));
+        payload.append(char(0x01));
+        while (payload.size() < 8)
+            payload.append(char(0x00));
+        m_connection->sendFrame(0x7DF, false, 0, payload);
+    }
+    onLogMessage("Reading I/M readiness (Mode 01 PID 01)...");
+}
+
+void MainWindow::handleReadiness(const quint8 *d)
+{
+    // SAE J1979: A = MIL bit + DTC count; B = continuous monitors (bits 0-2
+    // available, bits 4-6 incomplete); C/D = non-continuous monitors
+    // (available / incomplete bitmasks).
+    const bool mil = d[0] & 0x80;
+    const int dtcCount = d[0] & 0x7F;
+
+    struct Monitor { QString name; bool available; bool incomplete; };
+    QList<Monitor> monitors;
+    monitors.append({QStringLiteral("Misfire"), bool(d[1] & 0x01), bool(d[1] & 0x10)});
+    monitors.append({QStringLiteral("Fuel System"), bool(d[1] & 0x02), bool(d[1] & 0x20)});
+    monitors.append({QStringLiteral("Components"), bool(d[1] & 0x04), bool(d[1] & 0x40)});
+    static const char *nonContinuous[8] = {"Catalyst",      "Heated Catalyst",
+                                           "EVAP System",   "Secondary Air",
+                                           "A/C Refrigerant", "O2 Sensor",
+                                           "O2 Heater",     "EGR System"};
+    for (int bit = 0; bit < 8; ++bit)
+        monitors.append({QString::fromLatin1(nonContinuous[bit]), bool(d[2] & (1 << bit)),
+                         bool(d[3] & (1 << bit))});
+
+    const bool darkBg = palette().color(QPalette::Window).lightness() < 128;
+    const QString ok = darkBg ? "#5BD75B" : "#1E7A1E";
+    const QString bad = darkBg ? "#F26D6D" : "#A33333";
+    const QString mut = darkBg ? "#9A9A9A" : "#777777";
+
+    QStringList parts;
+    int notReady = 0;
+    for (const Monitor &m : monitors) {
+        if (!m.available) {
+            parts << QString("<span style='color:%1'>%2: n/a</span>").arg(mut, m.name);
+        } else if (m.incomplete) {
+            parts << QString("<span style='color:%1'>%2: not ready</span>").arg(bad, m.name);
+            ++notReady;
+        } else {
+            parts << QString("<span style='color:%1'>%2: ready</span>").arg(ok, m.name);
+        }
+    }
+    const QString milText = mil ? QString("<b><span style='color:%1'>Check-engine light ON</span></b>").arg(bad)
+                                : QString("<b><span style='color:%1'>Check-engine light off</span></b>").arg(ok);
+    m_readinessLabel->setText(QString("%1 &nbsp;·&nbsp; %2 stored code(s) &nbsp;·&nbsp; %3")
+                                  .arg(milText)
+                                  .arg(dtcCount)
+                                  .arg(parts.join(QStringLiteral(" &nbsp; "))));
+    onLogMessage(QString("Readiness: MIL %1, %2 stored code(s), %3 monitor(s) not ready.")
+                     .arg(mil ? "ON" : "off")
+                     .arg(dtcCount)
+                     .arg(notReady));
+}
+
 void MainWindow::handleSupportMask(quint8 basePid, const quint8 *mask)
 {
     m_supportMasksSeen |= quint8(1 << (basePid / 0x20));
@@ -1377,6 +1472,7 @@ void MainWindow::setDtcButtonsEnabled(bool enabled)
     m_readPendingButton->setEnabled(enabled);
     m_readPermanentButton->setEnabled(enabled);
     m_readFreezeButton->setEnabled(enabled);
+    m_readReadinessButton->setEnabled(enabled);
     m_clearDtcButton->setEnabled(enabled);
     if (m_readDtcsAction) // toolbar exists only after buildMenus()
         m_readDtcsAction->setEnabled(enabled);
@@ -1561,15 +1657,21 @@ void MainWindow::onSendTestRequestClicked()
 
 void MainWindow::onFrameReceived(const CanFrame &frame)
 {
-    // Sniff supported-PID bitmask replies (41 00/20/40 + 4 mask bytes) from an
-    // OBD response ID. GVRET frames carry the ISO-TP PCI byte first; ELM327
-    // synthesized frames start directly at the service byte.
+    // Sniff supported-PID bitmask replies (41 00/20/40 + 4 mask bytes) and
+    // readiness replies (41 01 + 4 status bytes) from an OBD response ID.
+    // GVRET frames carry the ISO-TP PCI byte first; ELM327 synthesized frames
+    // start directly at the service byte.
     if (frame.id >= 0x7E8 && frame.id <= 0x7EF) {
         for (int j = 0; j <= 1; ++j) {
-            if (j + 6 <= frame.length && frame.data[j] == 0x41
-                && (frame.data[j + 1] == 0x00 || frame.data[j + 1] == 0x20
-                    || frame.data[j + 1] == 0x40)) {
-                handleSupportMask(frame.data[j + 1], &frame.data[j + 2]);
+            if (j + 6 > frame.length || frame.data[j] != 0x41)
+                continue;
+            const quint8 pid = frame.data[j + 1];
+            if (pid == 0x00 || pid == 0x20 || pid == 0x40) {
+                handleSupportMask(pid, &frame.data[j + 2]);
+                break;
+            }
+            if (pid == 0x01) {
+                handleReadiness(&frame.data[j + 2]);
                 break;
             }
         }

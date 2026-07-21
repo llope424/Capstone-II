@@ -30,6 +30,8 @@ private slots:
     void mode07And0A();
     void mode04Clear();
     void mode02FreezeFrame();
+    void mode01Readiness();
+    void multiEcuDtcLines();
 
     // A4 — Mode 09 VIN / Calibration IDs (multi-frame)
     void mode09Vin();
@@ -200,14 +202,12 @@ void TestEmulatorEngine::mode01SupportedPids()
     ObdMessageModel model;
     Elm327EmulatorEngine engine(&model);
 
-    const QByteArray r00 = engine.handleLine("0100");
-    QVERIFY2(r00.startsWith("41 00 "), r00.constData());
-    QVERIFY2(r00.endsWith("01\r\r>"), r00.constData()); // chain bit set (PID 0x42 exists > 0x20)
-
-    // Nothing supported in 21-40, but chains on to 41-60.
-    QCOMPARE(engine.handleLine("0120"), QByteArray("41 20 00 00 00 01\r\r>"));
-    // PID 0x42 supported in 41-60 (bit for 0x42 = 0x40 in the first mask byte).
-    QCOMPARE(engine.handleLine("0140"), QByteArray("41 40 40 00 00 00\r\r>"));
+    // 28-PID set: bits for 04-07, 0A-10, 11/14/15, 1F, plus the chain bit.
+    QCOMPARE(engine.handleLine("0100"), QByteArray("41 00 1E 7F 98 03\r\r>"));
+    // 21/2E/2F/33 supported in 21-40; chains on to 41-60.
+    QCOMPARE(engine.handleLine("0120"), QByteArray("41 20 80 06 20 01\r\r>"));
+    // 42-46, 49, 4C, 5C, 5E supported in 41-60; no further ranges.
+    QCOMPARE(engine.handleLine("0140"), QByteArray("41 40 7C 90 00 14\r\r>"));
 }
 
 // Mode 03 returns "43 <count> <2-byte codes>" (inverse of ObdDtcClient::decodeDtc:
@@ -388,6 +388,38 @@ void TestEmulatorEngine::mode02FreezeFrame()
 
     // A PID the model has no value for is not part of the frame.
     QVERIFY(engine.handleLine("020D00").contains("NO DATA"));
+}
+
+// Mode 01 PID 01 (readiness) derives from the DTC state: MIL + count with
+// stored codes, misfire monitor incomplete while a P03xx code is stored.
+void TestEmulatorEngine::mode01Readiness()
+{
+    ObdMessageModel model;
+    Elm327EmulatorEngine engine(&model);
+
+    // Healthy: MIL off, zero codes, continuous monitors ready.
+    QCOMPARE(engine.handleLine("0101"), QByteArray("41 01 00 07 E5 00\r\r>"));
+
+    // Misfire stored: MIL on, 2 codes, misfire monitor incomplete.
+    model.setStoredDtcs({"P0300", "P0301"});
+    QCOMPARE(engine.handleLine("0101"), QByteArray("41 01 82 17 E5 00\r\r>"));
+}
+
+// silentEcus > 0 makes broadcast DTC reads answer like a real multi-ECU bus:
+// one line per ECU, the silent ones reporting "no codes". This reproduces the
+// response shape that once caused phantom-code parsing on a real vehicle.
+void TestEmulatorEngine::multiEcuDtcLines()
+{
+    ObdMessageModel model;
+    Elm327EmulatorEngine engine(&model);
+    model.setSilentEcus(2);
+
+    // No codes anywhere: three ECUs each answer "43 00".
+    QCOMPARE(engine.handleLine("03"), QByteArray("43 00\r43 00\r43 00\r\r>"));
+
+    // Engine ECU reports a misfire; the silent ECUs still answer "no codes".
+    model.setStoredDtcs({"P0301"});
+    QCOMPARE(engine.handleLine("03"), QByteArray("43 01 03 01\r43 00\r43 00\r\r>"));
 }
 
 QTEST_MAIN(TestEmulatorEngine)

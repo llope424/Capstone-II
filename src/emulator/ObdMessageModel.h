@@ -37,6 +37,11 @@ public:
     // Mode 04: clear stored + pending DTCs (permanent DTCs persist, as on a car).
     void clearDtcs();
 
+    // Number of additional "silent" ECUs that answer broadcast DTC reads with
+    // a no-codes line, as every ECU does on a real vehicle.
+    void setSilentEcus(int count) { m_silentEcus = count; }
+    int silentEcus() const { return m_silentEcus; }
+
     // Mode 09 vehicle information.
     void setVin(const QString &vin);
     QString vin() const { return m_vin; }
@@ -55,6 +60,7 @@ public:
         QStringList storedDtcs;
         QStringList pendingDtcs;
         QStringList permanentDtcs;
+        int silentEcus = 0;
     };
 
     bool loadBundled();                              // from :/emulator/obd_message.json
@@ -67,6 +73,7 @@ private:
     int indexOfScenario(const QString &name) const;
 
     QHash<quint8, QByteArray> m_pidRaw;
+    int m_silentEcus = 0;
     QStringList m_stored;
     QStringList m_pending;
     QStringList m_permanent;

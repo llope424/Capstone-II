@@ -54,6 +54,7 @@ public:
 
     void sendTestRequest();
     void queryPidSupport();
+    void readReadiness(); // Mode 01 PID 01: MIL, DTC count, I/M monitors
     void readStoredDtcs();
     void readPendingDtcs();
     void readPermanentDtcs();

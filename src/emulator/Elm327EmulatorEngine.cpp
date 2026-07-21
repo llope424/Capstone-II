@@ -222,13 +222,26 @@ QByteArray Elm327EmulatorEngine::lineTerm() const
 
 QByteArray Elm327EmulatorEngine::dtcResponse(quint8 service, const QStringList &codes)
 {
-    // "<service> <count> <2-byte code>...", e.g. "43 02 03 01 04 20".
+    // "<service> <count> <2-byte code>...", e.g. "43 02 03 01 04 20". On a real
+    // vehicle a broadcast DTC read is answered by EVERY ECU - including ones
+    // with no codes, which reply "<service> 00". Scenarios can model that with
+    // silentEcus > 0; each silent ECU adds its own no-codes line, reproducing
+    // the multi-line output that once caused phantom-code parsing bugs.
     QByteArray bytes;
     bytes += char(service);
     bytes += char(codes.size() & 0xFF);
     for (const QString &c : codes)
         bytes += encodeDtc(c);
-    return formatBytes(bytes);
+    QByteArray out = formatBytes(bytes);
+
+    const int silent = m_model ? m_model->silentEcus() : 0;
+    for (int i = 0; i < silent; ++i) {
+        QByteArray none;
+        none += char(service);
+        none += char(0x00);
+        out += lineTerm() + formatBytes(none);
+    }
+    return out;
 }
 
 QByteArray Elm327EmulatorEngine::mode01(quint8 pid)
@@ -236,6 +249,34 @@ QByteArray Elm327EmulatorEngine::mode01(quint8 pid)
     // 01 00/20/40/... are support-range queries answered with a 4-byte bitmask.
     if ((pid & 0x1F) == 0)
         return formatBytes(QByteArray(1, char(0x41)) + char(pid) + supportedMask(pid));
+
+    // PID 01: MIL status, DTC count, and I/M readiness monitors - derived from
+    // the scenario's DTC state so it always tells a consistent story: MIL on
+    // with stored codes, and the misfire monitor incomplete while a P03xx
+    // misfire is stored.
+    if (pid == 0x01) {
+        const QStringList stored = m_model ? m_model->storedDtcs() : QStringList();
+        bool misfire = false;
+        for (const QString &c : stored)
+            if (c.startsWith(QLatin1String("P03")))
+                misfire = true;
+        quint8 a = quint8(stored.size() & 0x7F);
+        if (!stored.isEmpty())
+            a |= 0x80;                       // MIL commanded on
+        quint8 b = 0x07;                     // continuous monitors available
+        if (misfire)
+            b |= 0x10;                       // misfire monitor incomplete
+        const quint8 c = 0xE5;               // catalyst/EVAP/O2/O2-heater/EGR available
+        const quint8 d = 0x00;               // all available monitors complete
+        QByteArray out;
+        out += char(0x41);
+        out += char(0x01);
+        out += char(a);
+        out += char(b);
+        out += char(c);
+        out += char(d);
+        return formatBytes(out);
+    }
 
     QByteArray raw = m_model ? m_model->pidRaw(pid) : QByteArray();
     if (raw.isEmpty()) {

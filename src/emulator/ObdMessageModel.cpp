@@ -84,6 +84,7 @@ bool ObdMessageModel::loadScenariosJson(const QByteArray &json)
         s.storedDtcs = dtcList(dtcs, "stored");
         s.pendingDtcs = dtcList(dtcs, "pending");
         s.permanentDtcs = dtcList(dtcs, "permanent");
+        s.silentEcus = o.value(QStringLiteral("silentEcus")).toInt(0);
 
         if (!s.name.isEmpty())
             loaded.append(s);
@@ -127,6 +128,7 @@ void ObdMessageModel::setActiveScenario(const QString &name)
     m_stored = s.storedDtcs;
     m_pending = s.pendingDtcs;
     m_permanent = s.permanentDtcs;
+    m_silentEcus = s.silentEcus;
     if (!s.vin.isEmpty())
         m_vin = s.vin;
     if (!s.calIds.isEmpty())
