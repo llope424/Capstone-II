@@ -147,7 +147,9 @@ const QVector<GaugeCatalogEntry> &gaugeCatalog()
         {0x42, 0, 16,    true,  15.5,  true,  11.0},   // Module Voltage
         {0x0A, 0, 765,   false, 0,     false, 0},      // Fuel Pressure
         {0x06, -100, 100,false, 0,     false, 0},      // Short-Term Fuel Trim B1
-        {0x14, 0, 1.3,   false, 0,     true,  0.1},    // O2 Sensor
+        // O2 sensor voltage oscillates near 0 V in normal operation, so a low
+        // threshold there would false-alarm constantly - no alert configured.
+        {0x14, 0, 1.3,   false, 0,     false, 0},      // O2 Sensor
     };
     return catalog;
 }
@@ -1111,6 +1113,7 @@ void MainWindow::resetPidSupport()
 {
     m_supportedPids.clear();
     m_supportMasksSeen = 0;
+    m_pidAlertState.clear(); // a new/closed session starts with no active alerts
     if (m_knownUnsupported.isEmpty())
         return;
     for (quint8 pid : m_knownUnsupported)
@@ -1545,43 +1548,59 @@ void MainWindow::onPidUpdated(quint8 pid, double value)
     if (m_chartPidCombo->currentData().toUInt() == pid)
         m_chart->addSample(shown);
 
-    // --- Threshold alerts (Nurdos Meirambek) ---
+    // Live-data threshold alerts (Nurdos Meirambek).
+    updateThresholdAlert(pid, shown);
+}
+
+void MainWindow::updateThresholdAlert(quint8 pid, double shown)
+{
+    // Find this PID's thresholds, if it has any.
+    const GaugeCatalogEntry *cfg = nullptr;
     for (const GaugeCatalogEntry &entry : gaugeCatalog()) {
-        if (entry.pid != pid)
-            continue;
-
-        QString pidName;
-        for (const PidDefinition &def : ObdPidMonitor::standardPids()) {
-            if (def.pid == pid) { pidName = def.name; break; }
+        if (entry.pid == pid) {
+            cfg = &entry;
+            break;
         }
+    }
+    if (!cfg)
+        return;
 
-        const QString unit = m_pidUnit.value(pid);
+    const QString unit = m_pidUnit.value(pid);
+    // Compare in display units so the thresholds track the metric/imperial choice.
+    const double high = Units::display(cfg->warn, unit, m_imperial);
+    const double low = Units::display(cfg->warnLow, unit, m_imperial);
 
-        if (entry.hasWarn) {
-            double warnDisplay = Units::display(entry.warn, unit, m_imperial);
-            if (shown >= warnDisplay) {
-                setStatus(QString::fromUtf8("\xe2\x9a\xa0 ") + pidName
-                          + " is HIGH: " + QString::number(shown, 'f', 1)
-                          + " " + Units::displayUnit(unit, m_imperial), 'r');
-                onLogMessage("ALERT: " + pidName + " exceeded high threshold ("
-                             + QString::number(shown, 'f', 1) + " >= "
-                             + QString::number(warnDisplay, 'f', 1) + ")");
-            }
-        }
+    int newState = 0;
+    if (cfg->hasWarn && shown >= high)
+        newState = 1;
+    else if (cfg->hasWarnLow && shown <= low)
+        newState = -1;
 
-        if (entry.hasWarnLow) {
-            double warnLowDisplay = Units::display(entry.warnLow, unit, m_imperial);
-            if (shown <= warnLowDisplay) {
-                setStatus(QString::fromUtf8("\xe2\x9a\xa0 ") + pidName
-                          + " is LOW: " + QString::number(shown, 'f', 1)
-                          + " " + Units::displayUnit(unit, m_imperial), 'r');
-                onLogMessage("ALERT: " + pidName + " dropped below low threshold ("
-                             + QString::number(shown, 'f', 1) + " <= "
-                             + QString::number(warnLowDisplay, 'f', 1) + ")");
-            }
-        }
+    const int oldState = m_pidAlertState.value(pid, 0);
+    if (newState == oldState)
+        return; // edge-triggered: only act when the state actually changes
+    m_pidAlertState.insert(pid, newState);
 
-        break;
+    QString pidName;
+    for (const PidDefinition &def : ObdPidMonitor::standardPids())
+        if (def.pid == pid) { pidName = def.name; break; }
+    const QString unitLabel = Units::displayUnit(unit, m_imperial);
+    const QString valueText = QString::number(shown, 'f', 1) + " " + unitLabel;
+
+    if (newState != 0) {
+        // Entered (or switched) an alert state.
+        const QString dir = newState > 0 ? QStringLiteral("HIGH") : QStringLiteral("LOW");
+        setStatus(QString::fromUtf8("\xe2\x9a\xa0 ") + pidName + " " + dir + ": " + valueText, 'r');
+        onLogMessage(QString("ALERT: %1 %2 (%3).").arg(pidName, dir, valueText));
+    } else {
+        // Recovered. Announce it, and restore the status once nothing else is
+        // still alerting (another PID may still be out of range).
+        onLogMessage(QString("%1 back to normal (%2).").arg(pidName, valueText));
+        bool anyActive = false;
+        for (auto it = m_pidAlertState.constBegin(); it != m_pidAlertState.constEnd(); ++it)
+            if (it.value() != 0) { anyActive = true; break; }
+        if (!anyActive && (m_connection->isOpen() || m_elm->isOpen()))
+            setStatus("Connected", 'g');
     }
 }
 
