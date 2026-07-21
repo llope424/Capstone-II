@@ -134,7 +134,9 @@ struct GaugeCatalogEntry
     double warnLow;
 };
 
-static const QVector<GaugeCatalogEntry> catalog = {
+const QVector<GaugeCatalogEntry> &gaugeCatalog()
+{
+    static const QVector<GaugeCatalogEntry> catalog = {
         //  PID   min    max   hasWarn warn  hasWarnLow warnLow
         {0x0C, 0, 8000,  true,  6500,  false, 0},      // Engine RPM
         {0x0D, 0, 240,   true,  180,   false, 0},      // Vehicle Speed
@@ -147,6 +149,7 @@ static const QVector<GaugeCatalogEntry> catalog = {
         {0x06, -100, 100,false, 0,     false, 0},      // Short-Term Fuel Trim B1
         {0x14, 0, 1.3,   false, 0,     true,  0.1},    // O2 Sensor
     };
+    return catalog;
 }
 }
 
