@@ -114,7 +114,17 @@ PreferencesDialog::PreferencesDialog(QWidget *parent) : QDialog(parent)
     connect(m_detailsButton, &QPushButton::clicked, this, [this]() { pickColor(&m_detailsColor); });
     styleForm->addRow("Details color:", m_detailsButton);
 
-    auto *hint = new QLabel("Changes preview instantly on the whole app. Editing a color "
+    m_gaugeStyleCombo = new QComboBox(this);
+    m_gaugeStyleCombo->addItem("Analog (dial + needle)", "analog");
+    m_gaugeStyleCombo->addItem("Digital (large digits)", "digital");
+    m_gaugeStyleCombo->addItem("Segmented (bar arc)", "segmented");
+    m_gaugeStyleCombo->addItem("Minimal (number only)", "minimal");
+    m_gaugeStyleCombo->setToolTip("How the dashboard gauges are drawn. Applies to all gauges.");
+    const int gsIdx = m_gaugeStyleCombo->findData(AppSettings::gaugeStyle());
+    m_gaugeStyleCombo->setCurrentIndex(gsIdx >= 0 ? gsIdx : 0);
+    styleForm->addRow("Gauge style:", m_gaugeStyleCombo);
+
+    auto *hint = new QLabel("Color changes preview instantly on the whole app. Editing a color "
                             "starts a Custom style from the selected preset. Cancel "
                             "restores your previous style.");
     hint->setWordWrap(true);
@@ -216,6 +226,7 @@ void PreferencesDialog::accept()
     AppSettings::setImperialUnits(m_unitsCombo->currentData().toBool());
     AppSettings::setPollIntervalMs(m_pollCombo->currentData().toInt());
     AppSettings::setAutoReconnect(m_reconnectCheck->isChecked());
+    AppSettings::setGaugeStyle(m_gaugeStyleCombo->currentData().toString());
     AppSettings::setStyleName(m_styleCombo->currentText());
     AppSettings::setCustomStyleColor("main", m_mainColor);
     AppSettings::setCustomStyleColor("secondary", m_secondaryColor);
