@@ -1,0 +1,7 @@
+<RCC>
+    <qresource prefix="/dtc">
+        <file alias="generic.json">generic.json</file>
+        <file alias="manufacturer/toyota.json">manufacturer/toyota.json</file>
+        <file alias="manufacturer/honda.json">manufacturer/honda.json</file>
+    </qresource>
+</RCC>

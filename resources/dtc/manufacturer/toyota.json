@@ -1,0 +1,10 @@
+{
+  "_comment": "PARTIAL Toyota-specific (P1xxx) DTC descriptions, authored for OBD Suite. Manufacturer codes are proprietary and this coverage is intentionally limited; unlisted codes fall back to a structural category.",
+  "P1300": {"description": "Igniter Circuit Malfunction (No. 1)", "severity": "Medium"},
+  "P1310": {"description": "Igniter Circuit Malfunction (No. 2)", "severity": "Medium"},
+  "P1335": {"description": "No Crankshaft Position Sensor Signal (Engine Running)", "severity": "High"},
+  "P1349": {"description": "Variable Valve Timing System Malfunction (Bank 1)", "severity": "Medium"},
+  "P1354": {"description": "Variable Valve Timing System Malfunction (Bank 2)", "severity": "Medium"},
+  "P1600": {"description": "ECM Battery Backup Circuit Malfunction", "severity": "Medium"},
+  "P1652": {"description": "Idle Air Control Valve Control Circuit", "severity": "Low"}
+}

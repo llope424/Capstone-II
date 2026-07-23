@@ -2,6 +2,7 @@
 
 #include <QHash>
 
+#include "DtcLibrary.h"
 #include "GvretConnection.h"
 
 namespace {
@@ -239,65 +240,10 @@ QString ObdDtcClient::decodeDtc(quint8 a, quint8 b)
 
 QString ObdDtcClient::describeDtc(const QString &code)
 {
-    // Curated descriptions for common generic codes. This is not a full DTC
-    // database (which is enormous); unknown codes fall back to a subsystem hint
-    // derived from the code structure.
-    static const QHash<QString, QString> known = {
-        {"P0101", "Mass Air Flow Circuit Range/Performance"},
-        {"P0102", "Mass Air Flow Circuit Low Input"},
-        {"P0113", "Intake Air Temperature Circuit High Input"},
-        {"P0117", "Engine Coolant Temperature Circuit Low"},
-        {"P0128", "Coolant Thermostat (below regulating temperature)"},
-        {"P0131", "O2 Sensor Circuit Low Voltage (Bank 1 Sensor 1)"},
-        {"P0135", "O2 Sensor Heater Circuit (Bank 1 Sensor 1)"},
-        {"P0171", "System Too Lean (Bank 1)"},
-        {"P0172", "System Too Rich (Bank 1)"},
-        {"P0174", "System Too Lean (Bank 2)"},
-        {"P0300", "Random/Multiple Cylinder Misfire Detected"},
-        {"P0301", "Cylinder 1 Misfire Detected"},
-        {"P0302", "Cylinder 2 Misfire Detected"},
-        {"P0303", "Cylinder 3 Misfire Detected"},
-        {"P0304", "Cylinder 4 Misfire Detected"},
-        {"P0305", "Cylinder 5 Misfire Detected"},
-        {"P0306", "Cylinder 6 Misfire Detected"},
-        {"P0325", "Knock Sensor 1 Circuit (Bank 1)"},
-        {"P0340", "Camshaft Position Sensor Circuit"},
-        {"P0401", "Exhaust Gas Recirculation Flow Insufficient"},
-        {"P0420", "Catalyst System Efficiency Below Threshold (Bank 1)"},
-        {"P0430", "Catalyst System Efficiency Below Threshold (Bank 2)"},
-        {"P0440", "Evaporative Emission System Malfunction"},
-        {"P0442", "Evaporative Emission System Leak Detected (small leak)"},
-        {"P0446", "Evaporative Emission System Vent Control Circuit"},
-        {"P0455", "Evaporative Emission System Leak Detected (large leak)"},
-        {"P0500", "Vehicle Speed Sensor Malfunction"},
-        {"P0505", "Idle Air Control System Malfunction"},
-        {"P0562", "System Voltage Low"},
-        {"P0563", "System Voltage High"},
-        {"U0100", "Lost Communication With ECM/PCM"},
-        {"U0121", "Lost Communication With ABS Control Module"},
-    };
-
-    const auto it = known.constFind(code);
-    if (it != known.constEnd())
-        return it.value();
-
+    // Delegates to the bundled DTC library (generic SAE descriptions + a
+    // structural fallback for unknown codes). Manufacturer-specific descriptions
+    // are available via DtcLibrary::describe(code, make) where the make is known.
     if (code.isEmpty())
         return QString();
-
-    // Fallback: broad category from the first letter, plus generic/manufacturer
-    // hint from the second character (0/2/3 = generic, 1 = manufacturer).
-    QString category;
-    switch (code.at(0).toLatin1()) {
-    case 'P': category = "Powertrain"; break;
-    case 'C': category = "Chassis"; break;
-    case 'B': category = "Body"; break;
-    case 'U': category = "Network/Communication"; break;
-    default: category = "Unknown"; break;
-    }
-
-    QString scope = "generic";
-    if (code.size() > 1 && code.at(1) == QChar('1'))
-        scope = "manufacturer-specific";
-
-    return QString("%1 %2 code (no description on file)").arg(category, scope);
+    return DtcLibrary::instance().describe(code).description;
 }

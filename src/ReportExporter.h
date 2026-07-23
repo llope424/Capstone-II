@@ -17,6 +17,8 @@ struct ReportData
         QString code;
         QString status;
         QString description;
+        QString severity;  // Info / Low / Medium / High / Critical
+        QString timestamp; // ISO-8601, when the codes were read
     };
     QVector<Dtc> dtcs;
 

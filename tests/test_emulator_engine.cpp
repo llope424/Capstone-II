@@ -39,6 +39,7 @@ private slots:
 
     // A5 — scenario presets
     void scenariosLoadAndSwitch();
+    void allCodesScenario();
 
     // Error / robustness cases
     void errorCases();
@@ -420,6 +421,35 @@ void TestEmulatorEngine::multiEcuDtcLines()
     // Engine ECU reports a misfire; the silent ECUs still answer "no codes".
     model.setStoredDtcs({"P0301"});
     QCOMPARE(engine.handleLine("03"), QByteArray("43 01 03 01\r43 00\r43 00\r\r>"));
+}
+
+// The "All Codes" preset stores every generic code the library knows and the
+// engine emits them all in one Mode 03 response (service + count + 2-byte pairs).
+void TestEmulatorEngine::allCodesScenario()
+{
+    ObdMessageModel model;
+    QVERIFY(model.loadBundled());
+    QVERIFY(model.scenarioNames().contains("All Codes (stress test)"));
+
+    model.setActiveScenario("All Codes (stress test)");
+    const int n = model.storedDtcs().size();
+    QVERIFY2(n >= 100 && n < 256, qPrintable(QString::number(n)));
+
+    Elm327EmulatorEngine engine(&model);
+    const QByteArray bytes = appHexParse(engine.handleLine("03"));
+    QCOMPARE(int(quint8(bytes.at(0))), 0x43);       // service 03 response
+    QCOMPARE(int(quint8(bytes.at(1))), n);          // count byte
+    QCOMPARE(bytes.size(), 2 + n * 2);              // service + count + pairs
+
+    // Realistic split: pending (07) and permanent (0A) also return codes.
+    QVERIFY(!model.pendingDtcs().isEmpty());
+    QVERIFY(!model.permanentDtcs().isEmpty());
+    const QByteArray pend = appHexParse(engine.handleLine("07"));
+    QCOMPARE(int(quint8(pend.at(0))), 0x47);
+    QCOMPARE(int(quint8(pend.at(1))), model.pendingDtcs().size());
+    const QByteArray perm = appHexParse(engine.handleLine("0A"));
+    QCOMPARE(int(quint8(perm.at(0))), 0x4A);
+    QCOMPARE(int(quint8(perm.at(1))), model.permanentDtcs().size());
 }
 
 QTEST_MAIN(TestEmulatorEngine)

@@ -44,6 +44,10 @@ qt_add_executable(ObdSuiteAppLinkTests
     ${CMAKE_SOURCE_DIR}/src/ObdPidMonitor.cpp
     ${CMAKE_SOURCE_DIR}/src/ObdDtcClient.cpp
     ${CMAKE_SOURCE_DIR}/src/GvretConnection.cpp
+    # ObdDtcClient::describeDtc now delegates to the DTC library, so this target
+    # must link it and bundle the DTC JSON (via the .qrc) to resolve descriptions.
+    ${CMAKE_SOURCE_DIR}/src/DtcLibrary.cpp
+    ${CMAKE_SOURCE_DIR}/resources/dtc/dtc.qrc
     ${CMAKE_SOURCE_DIR}/src/emulator/Elm327EmulatorEngine.cpp
     ${CMAKE_SOURCE_DIR}/src/emulator/ObdMessageModel.cpp
     ${CMAKE_SOURCE_DIR}/src/emulator/PidEncoders.cpp
@@ -65,3 +69,15 @@ target_include_directories(ObdSuiteVinDecoderTests PRIVATE ${CMAKE_SOURCE_DIR}/s
 target_link_libraries(ObdSuiteVinDecoderTests PRIVATE Qt6::Core Qt6::Test Qt6::Network)
 set_target_properties(ObdSuiteVinDecoderTests PROPERTIES WIN32_EXECUTABLE OFF)
 add_test(NAME ObdSuiteVinDecoderTests COMMAND ObdSuiteVinDecoderTests)
+
+# --- DTC library tests (bundled DTC JSON compiled in via the .qrc) ---
+qt_add_executable(ObdSuiteDtcTests
+    test_dtc_library.cpp
+    ${CMAKE_SOURCE_DIR}/src/DtcLibrary.h
+    ${CMAKE_SOURCE_DIR}/src/DtcLibrary.cpp
+    ${CMAKE_SOURCE_DIR}/resources/dtc/dtc.qrc
+)
+target_include_directories(ObdSuiteDtcTests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(ObdSuiteDtcTests PRIVATE Qt6::Core Qt6::Test)
+set_target_properties(ObdSuiteDtcTests PROPERTIES WIN32_EXECUTABLE OFF)
+add_test(NAME ObdSuiteDtcTests COMMAND ObdSuiteDtcTests)

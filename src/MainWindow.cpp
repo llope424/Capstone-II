@@ -57,6 +57,7 @@
 #include "AppSettings.h"
 #include "AppStyle.h"
 #include "DashboardConfigDialog.h"
+#include "DtcLibrary.h"
 #include "Elm327Connection.h"
 #include "PreferencesDialog.h"
 #include "Units.h"
@@ -1517,8 +1518,10 @@ void MainWindow::onFreezeFrameDtc(const QString &code, bool present)
         onLogMessage("No freeze frame stored.");
         return;
     }
-    m_freezeInfoLabel->setText(QString("Freeze frame captured when %1 set - %2")
-                                   .arg(code, ObdDtcClient::describeDtc(code)));
+    const QString severity =
+        DtcLibrary::severityName(DtcLibrary::instance().describe(code).severity);
+    m_freezeInfoLabel->setText(QString("Freeze frame captured when %1 set [%2] - %3")
+                                   .arg(code, severity, ObdDtcClient::describeDtc(code)));
     onLogMessage("Freeze frame trigger DTC: " + code);
 }
 
@@ -2107,11 +2110,14 @@ void MainWindow::onExportReport()
     data.firmware = m_firmwareText;
     data.calibrationIds = m_calIds;
 
+    const QString readTime = QDateTime::currentDateTime().toString(Qt::ISODate);
     for (int r = 0; r < m_dtcTable->rowCount(); ++r) {
         ReportData::Dtc d;
         d.code = m_dtcTable->item(r, 0) ? m_dtcTable->item(r, 0)->text() : QString();
         d.status = m_dtcTable->item(r, 1) ? m_dtcTable->item(r, 1)->text() : QString();
         d.description = m_dtcTable->item(r, 2) ? m_dtcTable->item(r, 2)->text() : QString();
+        d.severity = DtcLibrary::severityName(DtcLibrary::instance().describe(d.code).severity);
+        d.timestamp = readTime;
         data.dtcs.append(d);
     }
 

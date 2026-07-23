@@ -39,10 +39,11 @@ QString buildHtml(const ReportData &data)
         html += "<p>No trouble codes recorded.</p>";
     } else {
         html += "<table border='1' cellpadding='4' cellspacing='0'>";
-        html += "<tr><th>Code</th><th>Status</th><th>Description</th></tr>";
+        html += "<tr><th>Code</th><th>Status</th><th>Severity</th><th>Description</th></tr>";
         for (const auto &d : data.dtcs)
             html += "<tr><td>" + htmlEscape(d.code) + "</td><td>" + htmlEscape(d.status) +
-                    "</td><td>" + htmlEscape(d.description) + "</td></tr>";
+                    "</td><td>" + htmlEscape(d.severity) + "</td><td>" + htmlEscape(d.description) +
+                    "</td></tr>";
         html += "</table>";
     }
 
@@ -84,6 +85,8 @@ bool exportJson(const ReportData &data, const QString &filePath, QString *error)
         o["code"] = d.code;
         o["status"] = d.status;
         o["description"] = d.description;
+        o["severity"] = d.severity;
+        o["timestamp"] = d.timestamp;
         dtcs.append(o);
     }
     root["dtcs"] = dtcs;
@@ -123,7 +126,8 @@ bool exportCsv(const ReportData &data, const QString &filePath, QString *error)
     ts << "Vehicle,Firmware," << data.firmware << "\n";
     ts << "Vehicle,CalibrationIDs," << data.calibrationIds.join(' ') << "\n";
     for (const auto &d : data.dtcs)
-        ts << "DTC," << d.code << ",\"" << d.status << ": " << d.description << "\"\n";
+        ts << "DTC," << d.code << ",\"" << d.status << " [" << d.severity << "]: "
+           << d.description << " (" << d.timestamp << ")\"\n";
     for (const auto &p : data.pidSnapshot)
         ts << "PID,\"" << p.name << "\",\"" << p.value << ' ' << p.unit << "\"\n";
     f.close();
