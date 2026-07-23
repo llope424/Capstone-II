@@ -30,6 +30,11 @@ void setPollIntervalMs(int ms);
 bool autoReconnect();
 void setAutoReconnect(bool on);
 
+// Gauge rendering style applied to all dashboard gauges:
+// "analog" | "digital" | "segmented" | "minimal" (default "analog").
+QString gaugeStyle();
+void setGaugeStyle(const QString &style);
+
 // Dashboard layout (SDD FR-6 "configurable dashboard layouts"): the ordered
 // list of PIDs shown as gauges and the grid column count.
 QList<int> dashboardPids();

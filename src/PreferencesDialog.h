@@ -36,6 +36,7 @@ private:
     QComboBox *m_unitsCombo;
     QComboBox *m_pollCombo;
     QCheckBox *m_reconnectCheck;
+    QComboBox *m_gaugeStyleCombo;
 
     QComboBox *m_styleCombo;
     QPushButton *m_mainButton;

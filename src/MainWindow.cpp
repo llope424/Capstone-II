@@ -866,6 +866,10 @@ void MainWindow::onPreferences()
         applyDisplayUnits();
     }
 
+    // Rebuild the gauges so a changed gauge style takes effect (also harmless
+    // if only colors changed - the gauges repaint from the new palette).
+    rebuildGauges();
+
     // Poll rate: applies on the next start; restart live monitoring if active
     // so the change is immediate.
     const bool running = m_activeElm ? m_elm->isMonitoring() : m_pidMonitor->isRunning();
@@ -953,6 +957,7 @@ void MainWindow::rebuildGauges()
             gauge->setWarnThreshold(Units::display(cfg->warn, unit, m_imperial));
         if (cfg->hasWarnLow)
             gauge->setWarnLowThreshold(Units::display(cfg->warnLow, unit, m_imperial));
+        gauge->setStyle(GaugeWidget::styleFromString(AppSettings::gaugeStyle()));
         m_gaugeGrid->addWidget(gauge, rowIdx, col);
         m_gauges.insert(cfg->pid, gauge);
 

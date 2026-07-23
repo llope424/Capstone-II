@@ -79,6 +79,16 @@ void setAutoReconnect(bool on)
     QSettings().setValue("connection/autoReconnect", on);
 }
 
+QString gaugeStyle()
+{
+    return QSettings().value("dashboard/gaugeStyle", "analog").toString();
+}
+
+void setGaugeStyle(const QString &style)
+{
+    QSettings().setValue("dashboard/gaugeStyle", style);
+}
+
 QList<int> dashboardPids()
 {
     const QVariant v = QSettings().value("dashboard/pids");
