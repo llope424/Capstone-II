@@ -61,6 +61,10 @@ qt_add_executable(ObdSuite
     src/PreferencesDialog.cpp
     src/DashboardConfigDialog.h
     src/DashboardConfigDialog.cpp
+    # --- DTC library (plain-language descriptions + severity) ---
+    src/DtcLibrary.h
+    src/DtcLibrary.cpp
+    resources/dtc/dtc.qrc
     # --- In-app ELM327 emulator (Widgets control window + backend engine) ---
     src/emulator/Elm327EmulatorEngine.h
     src/emulator/Elm327EmulatorEngine.cpp

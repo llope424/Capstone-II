@@ -1,0 +1,9 @@
+{
+  "_comment": "PARTIAL Honda-specific (P1xxx) DTC descriptions, authored for OBD Suite. Manufacturer codes are proprietary and this coverage is intentionally limited; unlisted codes fall back to a structural category.",
+  "P1259": {"description": "VTEC System Malfunction (Bank 1)", "severity": "Medium"},
+  "P1298": {"description": "Electrical Load Detector Circuit High Voltage", "severity": "Low"},
+  "P1361": {"description": "TDC Sensor Intermittent Interruption", "severity": "Medium"},
+  "P1399": {"description": "Random Cylinder Misfire Detected", "severity": "High"},
+  "P1457": {"description": "EVAP System Leak Detected (Canister Side)", "severity": "Low"},
+  "P1607": {"description": "ECM Internal Circuit Malfunction", "severity": "Medium"}
+}
