@@ -184,6 +184,12 @@ private:
     bool m_imperial = false;            // cached AppSettings::imperialUnits()
     QHash<quint8, QString> m_pidUnit;   // PID -> metric source unit
 
+    // Live-data threshold alerts (Nurdos Meirambek). Edge-triggered: an alert
+    // fires once when a PID crosses a threshold, and the status bar recovers
+    // once no monitored PID is out of range. State: 0 = ok, 1 = high, -1 = low.
+    QHash<quint8, int> m_pidAlertState;
+    void updateThresholdAlert(quint8 pid, double shownValue);
+
     // What the connected vehicle reports it implements. A PID counts as
     // unsupported only once the bitmask covering its range has arrived.
     QSet<quint8> m_supportedPids;

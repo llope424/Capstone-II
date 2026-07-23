@@ -128,39 +128,43 @@ struct GaugeCatalogEntry
     quint8 pid;
     double min;
     double max;
-    bool hasWarn;
+    bool hasWarn;       // alert when value goes ABOVE this threshold
     double warn;
+    bool hasWarnLow;    // alert when value drops BELOW this threshold
+    double warnLow;
 };
 
 const QVector<GaugeCatalogEntry> &gaugeCatalog()
 {
     static const QVector<GaugeCatalogEntry> catalog = {
-        {0x0C, 0, 8000, true, 6500},   // Engine RPM
-        {0x0D, 0, 240, false, 0},      // Vehicle Speed
-        {0x05, -40, 150, true, 105},   // Coolant Temperature
-        {0x04, 0, 100, false, 0},      // Engine Load
-        {0x11, 0, 100, false, 0},      // Throttle Position
-        {0x0F, -40, 150, false, 0},    // Intake Air Temperature
-        {0x42, 0, 16, false, 0},       // Control Module Voltage
-        {0x0A, 0, 765, false, 0},      // Fuel Pressure
-        {0x06, -100, 100, false, 0},   // Short-Term Fuel Trim B1
-        {0x07, -100, 100, false, 0},   // Long-Term Fuel Trim B1
-        {0x14, 0, 1.3, false, 0},      // O2 Sensor 1 Voltage
-        {0x15, 0, 1.3, false, 0},      // O2 Sensor 2 Voltage
-        {0x0B, 0, 255, false, 0},      // Intake Manifold Pressure
-        {0x0E, -64, 64, false, 0},     // Timing Advance
-        {0x10, 0, 300, false, 0},      // MAF Air Flow Rate
-        {0x2E, 0, 100, false, 0},      // Commanded EVAP Purge
-        {0x2F, 0, 100, false, 0},      // Fuel Tank Level
-        {0x33, 0, 120, false, 0},      // Barometric Pressure
-        {0x43, 0, 100, false, 0},      // Absolute Load Value
-        {0x44, 0, 2, false, 0},        // Commanded Equivalence Ratio
-        {0x45, 0, 100, false, 0},      // Relative Throttle Position
-        {0x46, -40, 60, false, 0},     // Ambient Air Temperature
-        {0x49, 0, 100, false, 0},      // Accelerator Pedal Position
-        {0x4C, 0, 100, false, 0},      // Commanded Throttle
-        {0x5C, -40, 160, true, 130},   // Engine Oil Temperature
-        {0x5E, 0, 60, false, 0},       // Engine Fuel Rate
+        //  PID   min    max    hasWarn warn  hasWarnLow warnLow
+        {0x0C, 0, 8000,   true,  6500,  false, 0},     // Engine RPM
+        {0x0D, 0, 240,    true,  180,   false, 0},     // Vehicle Speed
+        {0x05, -40, 150,  true,  105,   false, 0},     // Coolant Temperature
+        {0x04, 0, 100,    true,  90,    false, 0},     // Engine Load
+        {0x11, 0, 100,    false, 0,     false, 0},     // Throttle Position
+        {0x0F, -40, 150,  true,  80,    false, 0},     // Intake Air Temperature
+        {0x42, 0, 16,     true,  15.5,  true,  11.0},  // Control Module Voltage (11-15.5 V band)
+        {0x0A, 0, 765,    false, 0,     false, 0},     // Fuel Pressure
+        {0x06, -100, 100, false, 0,     false, 0},     // Short-Term Fuel Trim B1
+        {0x07, -100, 100, false, 0,     false, 0},     // Long-Term Fuel Trim B1
+        // O2 voltage oscillates near 0 V normally, so no low-threshold alert.
+        {0x14, 0, 1.3,    false, 0,     false, 0},     // O2 Sensor 1 Voltage
+        {0x15, 0, 1.3,    false, 0,     false, 0},     // O2 Sensor 2 Voltage
+        {0x0B, 0, 255,    false, 0,     false, 0},     // Intake Manifold Pressure
+        {0x0E, -64, 64,   false, 0,     false, 0},     // Timing Advance
+        {0x10, 0, 300,    false, 0,     false, 0},     // MAF Air Flow Rate
+        {0x2E, 0, 100,    false, 0,     false, 0},     // Commanded EVAP Purge
+        {0x2F, 0, 100,    false, 0,     false, 0},     // Fuel Tank Level
+        {0x33, 0, 120,    false, 0,     false, 0},     // Barometric Pressure
+        {0x43, 0, 100,    false, 0,     false, 0},     // Absolute Load Value
+        {0x44, 0, 2,      false, 0,     false, 0},     // Commanded Equivalence Ratio
+        {0x45, 0, 100,    false, 0,     false, 0},     // Relative Throttle Position
+        {0x46, -40, 60,   false, 0,     false, 0},     // Ambient Air Temperature
+        {0x49, 0, 100,    false, 0,     false, 0},     // Accelerator Pedal Position
+        {0x4C, 0, 100,    false, 0,     false, 0},     // Commanded Throttle
+        {0x5C, -40, 160,  true,  130,   false, 0},     // Engine Oil Temperature
+        {0x5E, 0, 60,     false, 0,     false, 0},     // Engine Fuel Rate
     };
     return catalog;
 }
@@ -945,8 +949,10 @@ void MainWindow::rebuildGauges()
         const double max = Units::display(cfg->max, unit, m_imperial);
         auto *gauge = new GaugeWidget(name, Units::displayUnit(unit, m_imperial),
                                       min, max, m_gaugeGrid->parentWidget());
-        if (cfg->hasWarn)
+       if (cfg->hasWarn)
             gauge->setWarnThreshold(Units::display(cfg->warn, unit, m_imperial));
+        if (cfg->hasWarnLow)
+            gauge->setWarnLowThreshold(Units::display(cfg->warnLow, unit, m_imperial));
         m_gaugeGrid->addWidget(gauge, rowIdx, col);
         m_gauges.insert(cfg->pid, gauge);
 
@@ -1201,6 +1207,7 @@ void MainWindow::resetPidSupport()
 {
     m_supportedPids.clear();
     m_supportMasksSeen = 0;
+    m_pidAlertState.clear(); // a new/closed session starts with no active alerts
     if (m_knownUnsupported.isEmpty())
         return;
     for (quint8 pid : m_knownUnsupported)
@@ -1632,9 +1639,64 @@ void MainWindow::onPidUpdated(quint8 pid, double value)
     if (git != m_gauges.constEnd())
         git.value()->setValue(shown);
 
-    // Live chart, if this PID is the selected series.
+   // Live chart, if this PID is the selected series.
     if (m_chartPidCombo->currentData().toUInt() == pid)
         m_chart->addSample(shown);
+
+    // Live-data threshold alerts (Nurdos Meirambek).
+    updateThresholdAlert(pid, shown);
+}
+
+void MainWindow::updateThresholdAlert(quint8 pid, double shown)
+{
+    // Find this PID's thresholds, if it has any.
+    const GaugeCatalogEntry *cfg = nullptr;
+    for (const GaugeCatalogEntry &entry : gaugeCatalog()) {
+        if (entry.pid == pid) {
+            cfg = &entry;
+            break;
+        }
+    }
+    if (!cfg)
+        return;
+
+    const QString unit = m_pidUnit.value(pid);
+    // Compare in display units so the thresholds track the metric/imperial choice.
+    const double high = Units::display(cfg->warn, unit, m_imperial);
+    const double low = Units::display(cfg->warnLow, unit, m_imperial);
+
+    int newState = 0;
+    if (cfg->hasWarn && shown >= high)
+        newState = 1;
+    else if (cfg->hasWarnLow && shown <= low)
+        newState = -1;
+
+    const int oldState = m_pidAlertState.value(pid, 0);
+    if (newState == oldState)
+        return; // edge-triggered: only act when the state actually changes
+    m_pidAlertState.insert(pid, newState);
+
+    QString pidName;
+    for (const PidDefinition &def : ObdPidMonitor::standardPids())
+        if (def.pid == pid) { pidName = def.name; break; }
+    const QString unitLabel = Units::displayUnit(unit, m_imperial);
+    const QString valueText = QString::number(shown, 'f', 1) + " " + unitLabel;
+
+    if (newState != 0) {
+        // Entered (or switched) an alert state.
+        const QString dir = newState > 0 ? QStringLiteral("HIGH") : QStringLiteral("LOW");
+        setStatus(QString::fromUtf8("\xe2\x9a\xa0 ") + pidName + " " + dir + ": " + valueText, 'r');
+        onLogMessage(QString("ALERT: %1 %2 (%3).").arg(pidName, dir, valueText));
+    } else {
+        // Recovered. Announce it, and restore the status once nothing else is
+        // still alerting (another PID may still be out of range).
+        onLogMessage(QString("%1 back to normal (%2).").arg(pidName, valueText));
+        bool anyActive = false;
+        for (auto it = m_pidAlertState.constBegin(); it != m_pidAlertState.constEnd(); ++it)
+            if (it.value() != 0) { anyActive = true; break; }
+        if (!anyActive && (m_connection->isOpen() || m_elm->isOpen()))
+            setStatus("Connected", 'g');
+    }
 }
 
 void MainWindow::onSendTestRequestClicked()

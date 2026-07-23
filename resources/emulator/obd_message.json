@@ -85,6 +85,20 @@
       "dtcs": { "stored": ["P0420"], "pending": [], "permanent": ["P0420"] }
     },
     {
+      "name": "Threshold alerts test (overheat + weak battery)",
+      "vin": "1HGBH41JXMN109186",
+      "pids": {
+        "0x04": 92,
+        "0x05": 110,
+        "0x0C": 2100,
+        "0x0D": 30,
+        "0x0F": 45,
+        "0x11": 55,
+        "0x42": 10.6
+      },
+      "dtcs": { "stored": [], "pending": [], "permanent": [] }
+    },
+    {
       "name": "Engine off",
       "vin": "1HGBH41JXMN109186",
       "pids": {
