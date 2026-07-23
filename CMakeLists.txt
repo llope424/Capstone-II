@@ -44,6 +44,10 @@ qt_add_executable(ObdSuite
     src/VehicleStore.cpp
     src/GaugeWidget.h
     src/GaugeWidget.cpp
+    src/VehicleHealthAnalyzer.h
+    src/VehicleHealthAnalyzer.cpp
+    src/VehicleHealthWidget.h
+    src/VehicleHealthWidget.cpp
     src/LiveChartWidget.h
     src/LiveChartWidget.cpp
     src/FrameTableModel.h

@@ -22,6 +22,7 @@ class FrameTableModel;
 class FrameSummaryModel;
 class GaugeWidget;
 class LiveChartWidget;
+class VehicleHealthWidget;
 class EmulatorWindow;
 
 QT_BEGIN_NAMESPACE
@@ -179,6 +180,7 @@ private:
     QGridLayout *m_gaugeGrid = nullptr;    // rebuilt from the saved layout config
     LiveChartWidget *m_chart;
     QComboBox *m_chartPidCombo;
+    VehicleHealthWidget *m_healthWidget = nullptr; // Vehicle Health report card (Lindsey Hernandez)
 
     // Personalization state
     bool m_imperial = false;            // cached AppSettings::imperialUnits()

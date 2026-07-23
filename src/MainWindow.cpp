@@ -65,6 +65,7 @@
 #include "FrameTableModel.h"
 #include "GaugeWidget.h"
 #include "LiveChartWidget.h"
+#include "VehicleHealthWidget.h"
 #include "NewConnectionDialog.h"
 #include "ObdDtcClient.h"
 #include "ObdFreezeFrameClient.h"
@@ -439,6 +440,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
     // --- Vehicle tab (info read from the car + saved profiles/history) ---
     buildVehicleTab(tabs);
+
+    // --- Vehicle Health tab (report card from live PIDs + DTCs, Lindsey Hernandez) ---
+    m_healthWidget = new VehicleHealthWidget();
+    tabs->addTab(m_healthWidget, "Vehicle Health");
 
     // --- Connection log (persistent, unlike the transient status bar) ---
     m_logView = new QPlainTextEdit(central);
@@ -1584,6 +1589,11 @@ void MainWindow::onDtcsReceived(quint8 mode, const QStringList &codes)
     default: label = QString("Mode %1").arg(mode); break;
     }
 
+    // Feed the Vehicle Health report card (Lindsey Hernandez), including the
+    // empty case so re-reading after a repair updates the health score.
+    if (m_healthWidget)
+        m_healthWidget->updateDtcs(mode, codes);
+
     if (codes.isEmpty()) {
         onLogMessage(QString("No %1 trouble codes reported.").arg(label.toLower()));
         return;
@@ -1602,6 +1612,8 @@ void MainWindow::onDtcsReceived(quint8 mode, const QStringList &codes)
 void MainWindow::onDtcsCleared()
 {
     m_dtcTable->setRowCount(0);
+    if (m_healthWidget)
+        m_healthWidget->clearDtcs();
     onLogMessage("Trouble codes cleared. Re-read to confirm.");
     QMessageBox::information(this, "Clear DTCs",
                              "The ECU acknowledged the clear request. "
@@ -1650,6 +1662,11 @@ void MainWindow::onPidUpdated(quint8 pid, double value)
 
     // Live-data threshold alerts (Nurdos Meirambek).
     updateThresholdAlert(pid, shown);
+
+    // Vehicle Health report card (Lindsey Hernandez). Feed the raw metric value;
+    // the analyzer's thresholds are all metric (C, V, km/h, %).
+    if (m_healthWidget)
+        m_healthWidget->updatePid(pid, value);
 }
 
 void MainWindow::updateThresholdAlert(quint8 pid, double shown)
